@@ -202,27 +202,100 @@ function getBaseDomain(urlOrDomain) {
   
   // Extract the base domain (e.g., example.com from sub.example.com)
   const parts = hostname.split(".");
-  if (parts.length > 2) {
-    // Handle special cases like co.uk, com.au, etc.
-    const tld = parts.slice(-2).join(".");
-    if (["co.uk", "com.au", "co.jp", "co.nz", "org.uk", "ac.uk", "edu.au"].includes(tld)) {
-      return parts.slice(-3).join(".");
-    }
-    return parts.slice(-2).join(".");
+  
+  // If we only have 1 or 2 parts, it's already a base domain or an IP address
+  if (parts.length <= 2) {
+    return hostname;
   }
-  return hostname;
+  
+  // Handle special cases for various country/organization TLDs
+  // Common multi-part TLDs
+  const multipartTlds = [
+    // Country-specific
+    "co.uk", "com.au", "co.jp", "co.nz", "org.uk", "ac.uk", "edu.au", "net.au", "org.au", "co.za", 
+    "gov.uk", "nhs.uk", "ac.nz", "co.kr", "com.br", "com.mx", "com.sg", "co.in", "ac.in", "edu.in",
+    "com.hk", "net.in", "org.in", "co.th", "ac.th", "in.th", "ac.kr", "ne.jp", "or.jp", "ac.jp",
+    "govt.nz", "co.il", "org.il", "com.tr", "com.cn", "com.tw", "net.cn", "net.nz", "org.nz", "ind.in",
+    "co.id", "or.id", "web.id", "sch.id", "ac.id", "ac.ir", "co.ir", "gov.ir", "id.au", "gov.au",
+    
+    // Geographic/specialty domains
+    "com.ac", "edu.ac", "gov.ac", "mil.ac", "net.ac", "org.ac", "nom.ad", "ac.ae", "co.ae", "net.ae", 
+    "org.ae", "com.af", "edu.af", "gov.af", "net.af", "org.af", "com.ag", "org.ag", "gov.ai", "org.ai"
+  ];
+  
+  // Check for known multi-part TLDs
+  for (const tld of multipartTlds) {
+    if (hostname.endsWith("." + tld)) {
+      const tldParts = tld.split('.');
+      const requiredParts = tldParts.length + 1; // +1 for the domain name
+      if (parts.length >= requiredParts) {
+        return parts.slice(-(requiredParts)).join(".");
+      }
+    }
+  }
+  
+  // Check for IP addresses
+  if (parts.length === 4 && parts.every(part => !isNaN(parseInt(part)) && parseInt(part) >= 0 && parseInt(part) <= 255)) {
+    return hostname; // It's an IP address
+  }
+  
+  // Default case: return last two parts (standard TLD handling)
+  return parts.slice(-2).join(".");
 }
 
 // Check if a cookie domain is related to a site domain
 function isDomainRelated(cookieDomain, siteDomain) {
   // Remove leading dot if present
-  const cleanCookieDomain = cookieDomain.replace(/^\./, "");
-  const cleanSiteDomain = siteDomain.replace(/^\./, "");
+  const cleanCookieDomain = cookieDomain.replace(/^\./, "").toLowerCase();
+  const cleanSiteDomain = siteDomain.replace(/^\./, "").toLowerCase();
   
-  // Exact match or cookie domain includes site domain
-  return cleanCookieDomain === cleanSiteDomain || 
-         cleanCookieDomain.endsWith("." + cleanSiteDomain) || 
-         cleanSiteDomain.endsWith("." + cleanCookieDomain);
+  // Exact match
+  if (cleanCookieDomain === cleanSiteDomain) {
+    return true;
+  }
+  
+  // Get base domains for more accurate comparison
+  const cookieBaseDomain = getBaseDomain(cleanCookieDomain);
+  const siteBaseDomain = getBaseDomain(cleanSiteDomain);
+  
+  // Check if base domains match
+  if (cookieBaseDomain === siteBaseDomain) {
+    return true;
+  }
+  
+  // Cookie domain is a parent domain of site domain
+  if (cleanSiteDomain.endsWith('.' + cleanCookieDomain)) {
+    return true;
+  }
+  
+  // Site domain is a parent domain of cookie domain
+  if (cleanCookieDomain.endsWith('.' + cleanSiteDomain)) {
+    return true;
+  }
+  
+  // Check for common domains in cookie storage sharing 
+  // (Some companies share cookies across their different domains)
+  const cookieBaseParts = cookieBaseDomain.split('.');
+  const siteBaseParts = siteBaseDomain.split('.');
+  
+  // If both domains have the same name part but different TLDs
+  // e.g., example.com and example.org
+  if (cookieBaseParts.length >= 2 && siteBaseParts.length >= 2 && 
+      cookieBaseParts[cookieBaseParts.length - 2] === siteBaseParts[siteBaseParts.length - 2]) {
+    
+    // Only consider this a match for well-known companies that use multiple TLDs
+    const commonBrands = ["google", "microsoft", "apple", "amazon", "facebook", "twitter", 
+                          "linkedin", "adobe", "github", "salesforce", "shopify", "paypal", 
+                          "stripe", "dropbox", "zoom", "netflix"];
+    
+    if (commonBrands.some(brand => 
+        cookieBaseParts[cookieBaseParts.length - 2].includes(brand) || 
+        siteBaseParts[siteBaseParts.length - 2].includes(brand))) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 // Cookie purpose categories
@@ -238,34 +311,155 @@ const COOKIE_PURPOSES = {
 // Lists of known cookie names and domains by purpose
 const COOKIE_PATTERNS = {
   [COOKIE_PURPOSES.NECESSARY]: {
-    names: ["__cfduid", "PHPSESSID", "JSESSIONID", "ASP.NET_SessionId", "SERVERID", "sessionid", "session", "auth", "csrftoken", "connect.sid"],
-    domains: ["cloudflare.com"],
-    namePatterns: ["^csrf", "^session", "^auth", "^__Host-"]
+    names: [
+      // Authentication and session cookies
+      "__cfduid", "PHPSESSID", "JSESSIONID", "ASP.NET_SessionId", "SERVERID", 
+      "sessionid", "session", "auth", "csrftoken", "connect.sid", "XSRF-TOKEN",
+      "AWSALB", "AWSALBCORS", "laravel_session", "X-CSRF-TOKEN", "OCSESSID",
+      
+      // Security and functionality
+      "wp-settings", "wordpress_logged_in", "woocommerce_items_in_cart", 
+      "CookieConsent", "cookielaw_accepted", "cc_cookie_accept", "CONSENT", 
+      "euconsent", "cf_clearance", "datadome", "cf_use_ob",
+      
+      // Load balancing and AWS
+      "AWSELB", "AWSALBTG", "AWS-WAFABB", "TS01", "BIGipServer", "TS"
+    ],
+    domains: ["cloudflare.com", "akamaiedge.net", "aws.amazon.com", "fastly.net", "vercel.app"],
+    namePatterns: [
+      "^csrf", "^session", "^auth", "^__Host-", "^__Secure-", "^SESS", 
+      "^SSESS", "^XSRF", "^wfvt_", "^wf_", "^wp-", "^wordpress_", 
+      "^laravel_", "^PHPSESS", "^ASP", "^JSESS"
+    ]
   },
   [COOKIE_PURPOSES.PREFERENCES]: {
-    names: ["theme", "lang", "language", "timezone", "country", "currency", "settings"],
-    namePatterns: ["^display_", "^user_", "^pref_", "^theme_", "^lang_", "^currency_"]
+    names: [
+      // User preferences
+      "theme", "lang", "language", "timezone", "country", "currency", "settings",
+      "user_settings", "display_mode", "ui_settings", "color_theme", "fontSize",
+      "text_size", "preferred_locale", "preferred_currency", "region", "displayMode",
+      
+      // Feature flags and personalization (non-tracking)
+      "features_enabled", "experiments", "OptanonConsent", "OneTrustActiveGroups",
+      "visited", "return_visitor", "new_visitor", "contrast", "accessibility",
+      "textOnly", "high_contrast", "animations_disabled"
+    ],
+    namePatterns: [
+      "^display_", "^user_", "^pref_", "^theme_", "^lang_", "^currency_", 
+      "^region_", "^locale_", "^setting_", "^ui_", "^view_", "^layout_",
+      "^accessibility_", "^a11y_", "^text_size_", "^font_"
+    ]
   },
   [COOKIE_PURPOSES.ANALYTICS]: {
-    names: ["_ga", "_gid", "_gat", "__utma", "__utmb", "__utmc", "__utmt", "__utmz", "_hjid", "_hjAbsoluteSessionInProgress"],
-    domains: ["google-analytics.com", "googletagmanager.com", "hotjar.com", "crazyegg.com", "optimizely.com"],
-    namePatterns: ["^_ga", "^_hj", "^_pk_", "^_uet", "^__qca", "^__utm", "^_opt_"]
+    names: [
+      // Google Analytics
+      "_ga", "_gid", "_gat", "__utma", "__utmb", "__utmc", "__utmt", "__utmz", 
+      "_hjid", "_hjAbsoluteSessionInProgress", "_hjIncludedInSessionSample",
+      "_hjFirstSeen", "_hjSessionUser", "_hjSession", "_hjTLDTest", 
+      
+      // Adobe/Omniture
+      "s_vi", "s_fid", "s_cc", "s_sq", "s_ppv", "sc_anonymousId",
+      
+      // Heap, Mixpanel, etc.
+      "mp_*", "ajs_anonymous_id", "ajs_user_id", "heap", "_pk_id", "_pk_ses",
+      
+      // Other common analytics
+      "_derived_epik", "IR_gbd", "IR_PI", "IR_12396", "_clck", "_clsk",
+      "amplitude_id", "_chartbeat2", "_cb", "_cb_ls", "_cb_svref", "ln_or", 
+      "matomo_sessid", "_uetsid", "_uetvid", "sailthru_visitor", 
+      
+      // Plausible, Fathom, Simple Analytics
+      "plausible_session", "_fathom", "sa_visitor_id"
+    ],
+    domains: [
+      "google-analytics.com", "googletagmanager.com", "hotjar.com", "crazyegg.com", 
+      "optimizely.com", "segment.io", "segment.com", "mixpanel.com", "heap.io",
+      "analytics.google.com", "matomo.cloud", "matomo.org", "piwik.pro", 
+      "adobe.com", "omtrdc.net", "amplitude.com", "contentsquare.net",
+      "plausible.io", "fathom.com", "simpleanalytics.com", "usefathom.com",
+      "clarity.ms", "fullstory.com", "quantserve.com", "clicktale.net",
+      "mouseflow.com", "loggly.com", "stats.wp.com"
+    ],
+    namePatterns: [
+      "^_ga", "^_gid", "^_gat", "^_hj", "^_pk_", "^_uet", "^__qca", "^__utm", 
+      "^_opt_", "^ajs_", "^amplitude", "^mp_", "^__hssc", "^__hstc", "^hubspotutk",
+      "^_dc_gtm_", "^_gac_", "^_gali$", "^_gcl_au$", "^vuid", "^VISITOR_INFO",
+      "^_GRECAPTCHA$", "^_vis_opt", "^_vwo_", "^IR_", "^_cs_", "^statcounter_",
+      "^sc_is_visitor_unique", "^_chartbeat", "^intercom-", "^CMDD", "^CMID",
+      "^_clsk", "^_clck", "^_fbp", "^_tt_enable_cookie"
+    ]
   },
   [COOKIE_PURPOSES.MARKETING]: {
-    names: ["__gads", "_fbp", "_gcl_au", "IDE", "test_cookie", "NID", "DSID", "1P_JAR", "datr", "fr", "sb", "wd"],
-    domains: ["doubleclick.net", "adservice.google.com", "googlesyndication.com", "adform.net", "facebook.com"],
-    namePatterns: ["^_gcl_", "^_fbp", "^ad-id", "^ad_", "^ads_", "^__gfp_"]
+    names: [
+      // Google/DoubleClick
+      "__gads", "_fbp", "_gcl_au", "IDE", "test_cookie", "NID", "DSID", "1P_JAR", 
+      "MUID", "mc", "ANID", "AID", "TAID", "exchange_uid", "__gpi", "FPGCLAW",
+
+      // Facebook
+      "datr", "fr", "sb", "wd", "c_user", "xs", "spin", "presence", 
+      
+      // Other ad networks
+      "TDID", "TDCPM", "criteo", "uuid2", "tuuid", "uid", "PUBMDCID", "KRTBCOOKIE_",
+      "__adroll", "CMPS", "CMID", "AdCloudRecord", "AWSALB", "demdex", "VISITOR_INFO1_LIVE",
+      
+      // Retargeting
+      "_pinterest_ct", "_pinterest_sess", "yandexuid", "i", "yabs-sid",
+      "_tac", "_tas", "_ttp", "_4c_", "personalization_id", "anj", "usermatch",
+      "taboola_session_id", "taboola_upci", "t_gid", "yuidss"
+    ],
+    domains: [
+      "doubleclick.net", "adservice.google.com", "googlesyndication.com", "adform.net", 
+      "facebook.com", "ads.linkedin.com", "adnxs.com", "rubiconproject.com",
+      "casalemedia.com", "amazon-adsystem.com", "media.net", "pubmatic.com",
+      "advertising.com", "outbrain.com", "taboola.com", "criteo.com", "bidswitch.net",
+      "bing.com", "tapad.com", "ads.yahoo.com", "bluekai.com", "spotxchange.com",
+      "innovid.com", "ad.doubleclick.net", "adroll.com", "pinterest.com", "yandex.ru",
+      "tiktok.com", "smartadserver.com", "snap.com", "licdn.com"
+    ],
+    namePatterns: [
+      "^_gcl_", "^_fbp", "^ad-id", "^ad_", "^ads_", "^__gfp_", "^criteo", 
+      "^lidc", "^match_", "^muid", "^_ok", "^_okbk", "^_okdetect", "^_okla",
+      "^_oklv", "^pxrc", "^pixel_", "^rtbhouse", "^_scid", "^_tt_", "^uids", 
+      "^tuuid_lu", "^trc_cookie", "^sovrn_session", "^visitor-id", "^id-", 
+      "^adrl", "^yasc", "^uid", "^AWSALB", "^taboola", "^_pinterest"
+    ]
   },
   [COOKIE_PURPOSES.SOCIAL]: {
-    names: ["guest_id", "personalization_id", "ct0", "twid", "tfw_exp"],
-    domains: ["facebook.com", "twitter.com", "linkedin.com", "instagram.com", "pinterest.com", "youtube.com"],
-    namePatterns: ["^lidc", "^bcookie", "^bscookie", "^x-src"]
+    names: [
+      // Twitter
+      "guest_id", "personalization_id", "ct0", "twid", "tfw_exp", "_twitter_sess",
+      
+      // Facebook
+      "c_user", "xs", "fr", "presence", "m_pixel_ratio", "locale", "datr",
+      
+      // LinkedIn
+      "bcookie", "bscookie", "li_gc", "lidc", "UserMatchHistory", "lang",
+      
+      // Other platforms
+      "guest_id", "kdt", "personalization_id", "remember_checked_on", "twid",
+      "_pinterest_ct", "_pinterest_sess", "csrftoken", "rur", "mid", "ds_user_id",
+      "sessionid", "igfl", "mcd", "csrftoken", "YSC", "PREF", "SID", "SSID", "SIDCC",
+      "remote_sid"
+    ],
+    domains: [
+      "facebook.com", "twitter.com", "linkedin.com", "instagram.com", "pinterest.com", 
+      "youtube.com", "tiktok.com", "reddit.com", "tumblr.com", "snapchat.com",
+      "static.xx.fbcdn.net", "platform.twitter.com", "cdn.syndication.twimg.com",
+      "pinimg.com", "t.co", "disqus.com", "connect.facebook.net", "facebook.net",
+      "instagram.com", "links.pinterest.com", "widgets.pinterest.com", "medium.com",
+      "vimeo.com", "disquscdn.com"
+    ],
+    namePatterns: [
+      "^lidc", "^bcookie", "^bscookie", "^x-src", "^_twitter", "^_pin", "^_ig_",
+      "^fb_", "^ig_", "^tik_tok", "^snapchat", "^_reddit_session", "^rdt_",
+      "^tumblr_", "^twll", "^auth_token_", "^vuid"
+    ]
   }
 };
 
 // Determine cookie purpose based on name, domain and other properties
 function determineCookiePurpose(cookie) {
-  // Check against known patterns
+  // Check against known patterns first - this is the most reliable method
   for (const [purpose, patterns] of Object.entries(COOKIE_PATTERNS)) {
     // Check against known cookie names
     if (patterns.names && patterns.names.includes(cookie.name)) {
@@ -285,34 +479,99 @@ function determineCookiePurpose(cookie) {
     }
   }
 
-  // Check for common patterns in cookie names
+  // If no patterns matched, use more advanced heuristics
   const nameLower = cookie.name.toLowerCase();
   
+  // Check for common patterns in cookie names
+  // Authentication and security related cookies
   if (nameLower.includes("auth") || 
       nameLower.includes("token") || 
       nameLower.includes("session") || 
       nameLower.includes("csrf") ||
-      nameLower.includes("xsrf")) {
+      nameLower.includes("xsrf") ||
+      nameLower.includes("login") ||
+      nameLower.includes("logged") ||
+      nameLower.includes("secure") ||
+      nameLower.includes("verify")) {
     return COOKIE_PURPOSES.NECESSARY;
   }
   
+  // User preferences
   if (nameLower.includes("pref") || 
       nameLower.includes("lang") || 
       nameLower.includes("theme") || 
-      nameLower.includes("setting")) {
+      nameLower.includes("setting") ||
+      nameLower.includes("color") ||
+      nameLower.includes("mode") ||
+      nameLower.includes("layout") ||
+      nameLower.includes("config") ||
+      nameLower.includes("display")) {
     return COOKIE_PURPOSES.PREFERENCES;
   }
   
+  // Analytics and metrics
   if (nameLower.includes("track") || 
       nameLower.includes("stat") || 
       nameLower.includes("metric") || 
-      nameLower.includes("visit")) {
+      nameLower.includes("visit") ||
+      nameLower.includes("analytic") ||
+      nameLower.includes("monitor") ||
+      nameLower.includes("perf") ||
+      nameLower.includes("measure") ||
+      nameLower.includes("pixel") ||
+      nameLower.includes("clarity")) {
     return COOKIE_PURPOSES.ANALYTICS;
   }
   
+  // Marketing and advertising
   if (nameLower.includes("ad") || 
       nameLower.includes("promo") || 
-      nameLower.includes("campaign")) {
+      nameLower.includes("campaign") ||
+      nameLower.includes("market") ||
+      nameLower.includes("banner") ||
+      nameLower.includes("promot") ||
+      nameLower.includes("sponsor") ||
+      nameLower.includes("partner") ||
+      nameLower.includes("affiliate") ||
+      nameLower.includes("commerc") ||
+      nameLower.includes("remarket") ||
+      nameLower.includes("advert")) {
+    return COOKIE_PURPOSES.MARKETING;
+  }
+  
+  // Social media
+  if (nameLower.includes("social") ||
+      nameLower.includes("share") ||
+      nameLower.includes("tweet") ||
+      nameLower.includes("like") ||
+      nameLower.includes("follow") ||
+      nameLower.includes("fb-") ||
+      nameLower.includes("tw-") ||
+      nameLower.includes("pin-") ||
+      nameLower.includes("ig-") ||
+      nameLower.includes("feed")) {
+    return COOKIE_PURPOSES.SOCIAL;
+  }
+  
+  // Check cookie domain for clues
+  const cookieDomain = cookie.domain.toLowerCase();
+  
+  // Common analytics domains not caught earlier
+  if (cookieDomain.includes("stats") ||
+      cookieDomain.includes("track") ||
+      cookieDomain.includes("metric") ||
+      cookieDomain.includes("counter") ||
+      cookieDomain.includes("pixel") ||
+      cookieDomain.includes("tag")) {
+    return COOKIE_PURPOSES.ANALYTICS;
+  }
+  
+  // Common ad domains not caught earlier
+  if (cookieDomain.includes("ad") ||
+      cookieDomain.includes("ads") ||
+      cookieDomain.includes("advert") ||
+      cookieDomain.includes("market") ||
+      cookieDomain.includes("promo")) {
     return COOKIE_PURPOSES.MARKETING;
   }
   
@@ -323,24 +582,51 @@ function determineCookiePurpose(cookie) {
   }
   
   if (nameLower.includes("consent") || 
-      nameLower.includes("gdpr")) {
+      nameLower.includes("gdpr") ||
+      nameLower.includes("ccpa") ||
+      nameLower.includes("cookie-") ||
+      nameLower.includes("privacy") ||
+      nameLower.includes("optanon") ||
+      nameLower.includes("onetrust")) {
     return COOKIE_PURPOSES.NECESSARY;
   }
   
-  // Short session cookies are often necessary
+  // Short session cookies with no expiration are often necessary
   if (!cookie.expirationDate) {
     return COOKIE_PURPOSES.NECESSARY;
   }
   
-  // Long-lived cookies are often for tracking
+  // Cookie expiration time can give clues
   const expirationDate = cookie.expirationDate ? new Date(cookie.expirationDate * 1000) : null;
   const now = new Date();
-  const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
   
-  if (expirationDate && expirationDate > oneYearFromNow) {
-    return COOKIE_PURPOSES.MARKETING;
+  if (expirationDate) {
+    // Very short-lived cookies (< 1 hour) are often session-related
+    const oneHourFromNow = new Date(now.getTime() + (1 * 60 * 60 * 1000));
+    if (expirationDate < oneHourFromNow) {
+      return COOKIE_PURPOSES.NECESSARY;
+    }
+    
+    // Short-lived cookies (< 1 day) might be for temporary preferences
+    const oneDayFromNow = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+    if (expirationDate < oneDayFromNow) {
+      return COOKIE_PURPOSES.PREFERENCES;
+    }
+    
+    // Medium-term cookies (< 30 days) could be analytics
+    const thirtyDaysFromNow = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+    if (expirationDate < thirtyDaysFromNow) {
+      return COOKIE_PURPOSES.ANALYTICS;
+    }
+    
+    // Long-lived cookies (> 1 year) are often for tracking/marketing
+    const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+    if (expirationDate > oneYearFromNow) {
+      return COOKIE_PURPOSES.MARKETING;
+    }
   }
   
+  // If we still can't determine the purpose, it's unknown
   return COOKIE_PURPOSES.UNKNOWN;
 }
 
@@ -382,268 +668,151 @@ function categorizeCookie(cookie, siteUrl) {
 async function organizeSiteCookies(siteUrl) {
   try {
     if (!siteUrl) {
-      return { success: false, error: "No site URL provided" };
+      return { success: false, error: "No URL provided" };
     }
     
-    // Validate URL format
-    if (!siteUrl.startsWith("http")) {
-      // Try to convert to a valid URL if possible
-      if (!siteUrl.match(/^[a-zA-Z]+:\/\//)) {
-        siteUrl = "https://" + siteUrl;
-      } else {
-        return { success: false, error: "Invalid site URL format" };
-      }
-    }
+    // Parse the site URL
+    const url = new URL(siteUrl);
+    const domain = url.hostname;
+    const baseDomain = getBaseDomain(domain);
     
-    console.time("cookieOrganization");
+    console.log(`Organizing cookies for ${siteUrl} (domain: ${domain}, baseDomain: ${baseDomain})`);
     
-    // Parse the domain from URL
-    let siteDomain;
-    let siteBaseDomain;
-    
-    try {
-      siteDomain = new URL(siteUrl).hostname;
-      siteBaseDomain = getBaseDomain(siteDomain);
-    } catch (error) {
-      console.error("Error parsing site URL:", error, siteUrl);
-      return { success: false, error: `Could not parse site URL: ${error.message}` };
-    }
-    
-    // Special handling for education domains which may have more complex cookie setups
-    const isEducationDomain = siteDomain.endsWith(".edu") || 
-                            siteDomain.includes(".edu.") || 
-                            siteDomain.endsWith(".ac.uk");
-    
-    // Get all cookies using optimized retrieval
+    // Fetch all cookies that could be related to this site
     let allCookies = [];
+    
     try {
-      // First, try to get cookies directly related to the current site
-      // This is faster and will work for most cases
-      console.time("cookieRetrieval");
-      let siteCookies = await getAllCookies({ url: siteUrl });
+      // Get cookies for the exact domain
+      const domainCookies = await getAllCookies({ domain });
+      console.log(`Found ${domainCookies.length} cookies for domain ${domain}`);
+      allCookies = allCookies.concat(domainCookies);
       
-      // For more thorough results, add domain/subdomain cookies
-      let domainCookies = await getAllCookies({ domain: siteDomain });
+      // Get cookies for the URL (captures path-specific cookies)
+      const urlCookies = await getAllCookies({ url: siteUrl });
+      console.log(`Found ${urlCookies.length} cookies for URL ${siteUrl}`);
+      allCookies = allCookies.concat(urlCookies);
       
-      // Create a Map to avoid duplicates - using a compound key of name+domain+path
-      const cookieMap = new Map();
-      
-      // Efficient function to add cookies to our map
-      const addCookiesToMap = (cookies) => {
-        if (!cookies || !cookies.length) return;
-        for (let i = 0; i < cookies.length; i++) {
-          const cookie = cookies[i];
-          const key = `${cookie.name}|${cookie.domain}|${cookie.path}`;
-          cookieMap.set(key, cookie);
-        }
-      };
-      
-      // Add the initial cookies
-      addCookiesToMap(siteCookies);
-      addCookiesToMap(domainCookies);
-      
-      // For education domains or sites with few cookies, perform additional lookups
-      if (isEducationDomain || cookieMap.size < 5) {
-        // Add base domain cookies
-        const baseDomainCookies = await getAllCookies({ domain: siteBaseDomain });
-        addCookiesToMap(baseDomainCookies);
-        
-        // For thorough scanning, if few cookies found, check all cookies but filter efficiently
-        if (cookieMap.size < 10) {
-          console.log("Performing thorough cookie scan for:", siteDomain);
-          
-          // Get all cookies in batches to prevent memory issues with very large sets
-          const allSiteCookies = await getAllCookies({});
-          
-          // Pre-calculate the base domain outside the loop for efficiency
-          const siteBaseDomainLower = siteBaseDomain.toLowerCase();
-          
-          // Use optimized filtering for large cookie sets
-          const relevantCookies = allSiteCookies.filter(cookie => {
-            // Quick check for obvious matches to avoid expensive operations
-            if (cookie.domain.includes(siteDomain)) return true;
-            
-            const cookieDomain = cookie.domain.replace(/^\./, "").toLowerCase();
-            
-            // Fast check for base domain match
-            if (cookieDomain.includes(siteBaseDomainLower)) return true;
-            
-            // Only perform more expensive check if the above failed
-            return isDomainRelated(cookieDomain, siteDomain);
-          });
-          
-          addCookiesToMap(relevantCookies);
-        }
+      // Get cookies for the base domain to capture subdomains
+      if (baseDomain !== domain) {
+        const baseDomainCookies = await getAllCookies({ domain: baseDomain });
+        console.log(`Found ${baseDomainCookies.length} cookies for base domain ${baseDomain}`);
+        allCookies = allCookies.concat(baseDomainCookies);
       }
       
-      // Convert map back to array
-      allCookies = Array.from(cookieMap.values());
-      console.timeEnd("cookieRetrieval");
-      console.log(`Retrieved ${allCookies.length} unique cookies for ${siteDomain}`);
-    } catch (error) {
-      console.error("Error getting cookies:", error);
-      return { success: false, error: `Failed to retrieve cookies: ${error.message}` };
-    }
-    
-    if (!allCookies || allCookies.length === 0) {
+      // For educational domains, add special handling
+      if (domain.endsWith('.edu')) {
+        try {
+          const eduCookies = await getAllCookies({});
+          const filteredEduCookies = eduCookies.filter(cookie => 
+            cookie.domain.endsWith('.edu') || 
+            cookie.domain.includes(baseDomain)
+          );
+          console.log(`Found ${filteredEduCookies.length} additional .edu-related cookies`);
+          allCookies = allCookies.concat(filteredEduCookies);
+        } catch (eduError) {
+          console.warn("Error fetching additional .edu cookies:", eduError);
+        }
+      }
+    } catch (fetchError) {
+      console.error("Error fetching cookies:", fetchError);
       return { 
-        success: true, 
-        siteUrl,
-        stats: { 
-          site: siteDomain,
-          cookies: 0,
-          byRelationship: { primary: 0, secondary: 0, thirdParty: 0 },
-          byPurpose: {
-            necessary: 0, preferences: 0, analytics: 0,
-            marketing: 0, social: 0, unknown: 0
-          },
-          lastScan: new Date().toISOString()
-        },
-        cookiesByRelationship: {},
-        cookiesByPurpose: {},
-        siteCookies: []
+        success: false, 
+        error: "Failed to fetch cookies. " + fetchError.message
       };
     }
     
-    // Check if we have a large number of cookies
-    const isLargeCookieSet = allCookies.length > 200;
+    // Remove duplicates by creating a Map with a unique key for each cookie
+    const cookieMap = new Map();
     
-    // For large sets, use more memory-efficient processing
-    // Create maps for categories
-    console.time("cookieCategorization");
+    // Helper function to add cookies to map
+    const addCookiesToMap = (cookies) => {
+      if (!cookies || !cookies.length) return;
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i];
+        const key = `${cookie.name}|${cookie.domain}|${cookie.path}`;
+        cookieMap.set(key, cookie);
+      }
+    };
+    
+    // Add all cookies to the map
+    addCookiesToMap(allCookies);
+    
+    // Convert map back to array and categorize each cookie
+    const uniqueCookies = Array.from(cookieMap.values());
+    console.log(`Found ${uniqueCookies.length} unique cookies after deduplication`);
+    
+    // Organize cookies by purpose and relationship
+    const cookiesByPurpose = {
+      necessary: [],
+      preferences: [],
+      analytics: [],
+      marketing: [],
+      social: [],
+      unknown: []
+    };
+    
     const cookiesByRelationship = {
       primary: [],
       secondary: [],
       thirdParty: []
     };
     
-    const cookiesByPurpose = {
-      [COOKIE_PURPOSES.NECESSARY]: [],
-      [COOKIE_PURPOSES.PREFERENCES]: [],
-      [COOKIE_PURPOSES.ANALYTICS]: [],
-      [COOKIE_PURPOSES.MARKETING]: [],
-      [COOKIE_PURPOSES.SOCIAL]: [],
-      [COOKIE_PURPOSES.UNKNOWN]: []
-    };
-    
-    // Optimization for large datasets - process in batches to avoid blocking
-    const BATCH_SIZE = isLargeCookieSet ? 50 : allCookies.length;
-    const totalBatches = Math.ceil(allCookies.length / BATCH_SIZE);
-    
-    // All cookies related to this site
-    const siteCookies = [];
-    
-    // Process cookies in batches
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      const startIdx = batchIndex * BATCH_SIZE;
-      const endIdx = Math.min(startIdx + BATCH_SIZE, allCookies.length);
+    // Categorize each cookie
+    for (let i = 0; i < uniqueCookies.length; i++) {
+      const cookie = uniqueCookies[i];
       
-      // Process each cookie in this batch
-      for (let i = startIdx; i < endIdx; i++) {
-        const cookie = allCookies[i];
-        
-        // Skip null or undefined cookies (defensive programming)
-        if (!cookie) continue;
-        
-        // Get the categories - reuse calculation for performance
-        const categories = categorizeCookie(cookie, siteUrl);
-        
-        // Add relationship and purpose info to the cookie
-        const enhancedCookie = {
-          ...cookie,
-          relationshipCategory: categories.relationship,
-          purposeCategory: categories.purpose
-        };
-        
-        // Add to appropriate relationship category
-        cookiesByRelationship[categories.relationship].push(enhancedCookie);
-        
-        // Add to appropriate purpose category
-        cookiesByPurpose[categories.purpose].push(enhancedCookie);
-        
-        // Add to all site cookies
-        siteCookies.push(enhancedCookie);
-        
-        // For very large sets, allow UI thread to process occasionally
-        if (isLargeCookieSet && (i - startIdx) % 20 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
+      // Categorize by purpose and relationship
+      const categorized = categorizeCookie(cookie, siteUrl);
+      
+      // Add to the appropriate purpose category
+      if (cookiesByPurpose[categorized.purpose]) {
+        cookiesByPurpose[categorized.purpose].push(cookie);
+      } else {
+        cookiesByPurpose.unknown.push(cookie);
       }
+      
+      // Add to the appropriate relationship category
+      if (cookiesByRelationship[categorized.relationship]) {
+        cookiesByRelationship[categorized.relationship].push(cookie);
+      } else {
+        cookiesByRelationship.thirdParty.push(cookie);
+      }
+      
+      // Store categorization on the cookie object itself
+      cookie.purposeCategory = categorized.purpose;
+      cookie.relationshipCategory = categorized.relationship;
     }
-    console.timeEnd("cookieCategorization");
     
-    // Filter out empty categories
-    const filteredRelationships = {};
-    Object.entries(cookiesByRelationship).forEach(([key, cookies]) => {
-      if (cookies.length > 0) {
-        filteredRelationships[key] = cookies;
-      }
-    });
-    
-    const filteredPurposes = {};
-    Object.entries(cookiesByPurpose).forEach(([key, cookies]) => {
-      if (cookies.length > 0) {
-        filteredPurposes[key] = cookies;
-      }
-    });
-    
-    // Count total cookies
-    const totalCookies = siteCookies.length;
-    
-    // Create stats
-    const stats = { 
-      site: siteDomain,
-      cookies: totalCookies,
-      byRelationship: {
-        primary: cookiesByRelationship.primary.length,
-        secondary: cookiesByRelationship.secondary.length,
-        thirdParty: cookiesByRelationship.thirdParty.length
-      },
+    // Generate statistics
+    const stats = {
+      total: uniqueCookies.length,
+      primary: cookiesByRelationship.primary.length,
+      secondary: cookiesByRelationship.secondary.length,
+      thirdParty: cookiesByRelationship.thirdParty.length,
       byPurpose: {
-        necessary: cookiesByPurpose[COOKIE_PURPOSES.NECESSARY].length,
-        preferences: cookiesByPurpose[COOKIE_PURPOSES.PREFERENCES].length,
-        analytics: cookiesByPurpose[COOKIE_PURPOSES.ANALYTICS].length,
-        marketing: cookiesByPurpose[COOKIE_PURPOSES.MARKETING].length,
-        social: cookiesByPurpose[COOKIE_PURPOSES.SOCIAL].length,
-        unknown: cookiesByPurpose[COOKIE_PURPOSES.UNKNOWN].length
-      },
-      lastScan: new Date().toISOString(),
-      retrievalTime: isLargeCookieSet ? "optimized" : "standard"
+        necessary: cookiesByPurpose.necessary.length,
+        preferences: cookiesByPurpose.preferences.length,
+        analytics: cookiesByPurpose.analytics.length,
+        marketing: cookiesByPurpose.marketing.length,
+        social: cookiesByPurpose.social.length,
+        unknown: cookiesByPurpose.unknown.length
+      }
     };
     
-    console.timeEnd("cookieOrganization");
-    console.log(`Processed ${totalCookies} cookies for ${siteDomain}`);
-    
-    // Save cookies and stats for this site
-    await new Promise((resolve, reject) => {
-      chrome.storage.local.set({ 
-        cookiesByRelationship: filteredRelationships,
-        cookiesByPurpose: filteredPurposes,
-        siteCookies: siteCookies,
-        cookieStats: stats,
-        lastSiteUrl: siteUrl
-      }, () => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
-        }
-      });
-    });
-    
-    return { 
-      success: true, 
-      siteUrl,
-      stats, 
-      cookiesByRelationship: filteredRelationships,
-      cookiesByPurpose: filteredPurposes,
-      siteCookies
+    // Return organized cookies
+    return {
+      success: true,
+      cookies: uniqueCookies,
+      cookiesByPurpose,
+      cookiesByRelationship,
+      stats,
+      siteUrl
     };
   } catch (error) {
-    console.error("Error organizing site cookies:", error);
+    console.error("Error organizing cookies:", error);
     return { 
       success: false, 
-      error: error.message 
+      error: error.message || "An error occurred while organizing cookies"
     };
   }
 }
@@ -663,20 +832,24 @@ async function getCurrentTabUrl() {
 }
 
 // Scan cookies for the current active tab
-async function scanActiveTabCookies(sendResponse) {
+async function scanActiveTabCookies(message, sendResponse) {
   try {
-    // Get URL of the current active tab
-    let tabUrl;
-    try {
-      tabUrl = await getCurrentTabUrl();
-      console.log("Successfully got tab URL:", tabUrl);
-    } catch (urlError) {
-      console.error("Error getting tab URL:", urlError);
-      sendResponse({ 
-        success: false, 
-        error: "Could not access current tab. Make sure the extension has proper permissions." 
-      });
-      return;
+    // Get URL from the message or from the current active tab
+    let tabUrl = message.url;
+    
+    if (!tabUrl) {
+      // If no URL provided in message, get it from the current tab
+      try {
+        tabUrl = await getCurrentTabUrl();
+        console.log("Successfully got tab URL:", tabUrl);
+      } catch (urlError) {
+        console.error("Error getting tab URL:", urlError);
+        sendResponse({ 
+          success: false, 
+          error: "Could not access current tab. Make sure the extension has proper permissions." 
+        });
+        return;
+      }
     }
     
     if (!tabUrl || tabUrl === "chrome://newtab/" || tabUrl.startsWith("chrome://") || tabUrl.startsWith("chrome-extension://")) {
@@ -771,6 +944,157 @@ async function refreshCookieData(siteUrl, callback) {
 
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("Background script received message:", message);
+  
+  // Return true to indicate we'll respond asynchronously
+  if (message.action === "getCookies" && message.url) {
+    console.log("Processing getCookies action for URL:", message.url);
+    
+    try {
+      const url = new URL(message.url);
+      const domain = url.hostname;
+      const baseDomain = getBaseDomain(domain);
+      
+      // Get all cookies using more comprehensive approach
+      Promise.all([
+        // Get cookies for the exact domain
+        new Promise(resolve => chrome.cookies.getAll({ domain }, cookies => {
+          if (chrome.runtime.lastError) {
+            console.error("Error getting domain cookies:", chrome.runtime.lastError);
+            resolve([]);
+          } else {
+            resolve(cookies);
+          }
+        })),
+        // Get cookies for the URL (captures path-specific cookies)
+        new Promise(resolve => chrome.cookies.getAll({ url: message.url }, cookies => {
+          if (chrome.runtime.lastError) {
+            console.error("Error getting URL cookies:", chrome.runtime.lastError);
+            resolve([]);
+          } else {
+            resolve(cookies);
+          }
+        })),
+        // Get cookies for the base domain to capture subdomains
+        new Promise(resolve => chrome.cookies.getAll({ domain: baseDomain }, cookies => {
+          if (chrome.runtime.lastError) {
+            console.error("Error getting base domain cookies:", chrome.runtime.lastError);
+            resolve([]);
+          } else {
+            resolve(cookies);
+          }
+        }))
+      ]).then(cookieArrays => {
+        // Merge all cookie arrays and remove duplicates
+        const cookieMap = new Map();
+        
+        // Helper function to add cookies to map
+        const addCookiesToMap = (cookies) => {
+          if (!cookies || !cookies.length) return;
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i];
+            const key = `${cookie.name}|${cookie.domain}|${cookie.path}`;
+            cookieMap.set(key, cookie);
+          }
+        };
+        
+        // Add all cookies to the map
+        cookieArrays.forEach(cookies => addCookiesToMap(cookies));
+        
+        // Convert map back to array
+        const cookies = Array.from(cookieMap.values());
+        
+        console.log(`Found ${cookies.length} unique cookies for domain ${domain}`);
+        
+        // Organize cookies by purpose (simplified for now)
+        const cookiesByPurpose = {
+          necessary: [],
+          preferences: [],
+          analytics: [],
+          marketing: [],
+          social: [],
+          unknown: []
+        };
+        
+        // Organize cookies by relationship
+        const cookiesByRelationship = {
+          primary: [],
+          secondary: [],
+          thirdParty: []
+        };
+        
+        // Simple categorization based on cookie names (this should be more sophisticated in production)
+        cookies.forEach(cookie => {
+          const name = cookie.name.toLowerCase();
+          
+          // Determine purpose (very simplified logic)
+          if (name.includes("sess") || name.includes("auth") || name.includes("token")) {
+            cookie.purposeCategory = "necessary";
+            cookiesByPurpose.necessary.push(cookie);
+          } else if (name.includes("pref") || name.includes("theme") || name.includes("setting")) {
+            cookie.purposeCategory = "preferences";
+            cookiesByPurpose.preferences.push(cookie);
+          } else if (name.includes("ga") || name.includes("analytic") || name.includes("stat")) {
+            cookie.purposeCategory = "analytics";
+            cookiesByPurpose.analytics.push(cookie);
+          } else if (name.includes("ad") || name.includes("campaign") || name.includes("track")) {
+            cookie.purposeCategory = "marketing";
+            cookiesByPurpose.marketing.push(cookie);
+          } else if (name.includes("fb") || name.includes("twitter") || name.includes("social")) {
+            cookie.purposeCategory = "social";
+            cookiesByPurpose.social.push(cookie);
+          } else {
+            cookie.purposeCategory = "unknown";
+            cookiesByPurpose.unknown.push(cookie);
+          }
+          
+          // Determine relationship (improved logic)
+          if (cookie.domain === domain || cookie.domain === `.${domain}`) {
+            cookie.relationshipCategory = "primary";
+            cookiesByRelationship.primary.push(cookie);
+          } else if (cookie.domain.endsWith(`.${domain}`) || domain.endsWith(`.${cookie.domain.replace(/^\./, '')}`)) {
+            cookie.relationshipCategory = "secondary";
+            cookiesByRelationship.secondary.push(cookie);
+          } else {
+            cookie.relationshipCategory = "thirdParty";
+            cookiesByRelationship.thirdParty.push(cookie);
+          }
+        });
+        
+        // Generate stats
+        const stats = {
+          total: cookies.length,
+          primary: cookiesByRelationship.primary.length,
+          secondary: cookiesByRelationship.secondary.length,
+          thirdParty: cookiesByRelationship.thirdParty.length
+        };
+        
+        sendResponse({
+          success: true,
+          cookies: cookies,
+          cookiesByPurpose: cookiesByPurpose,
+          cookiesByRelationship: cookiesByRelationship,
+          stats: stats
+        });
+      }).catch(error => {
+        console.error("Error processing cookies:", error);
+        sendResponse({ 
+          success: false, 
+          error: error.message || "Error processing cookies" 
+        });
+      });
+      
+      // Return true to indicate we'll respond asynchronously
+      return true;
+    } catch (error) {
+      console.error("Error processing URL:", error);
+      sendResponse({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+  }
+  
   // Check if message includes an action
   if (!message || !message.action) {
     sendResponse({ success: false, error: "No action specified" });
@@ -782,7 +1106,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch(message.action) {
       case "scanCurrentSiteCookies":
         // Scan cookies for current tab
-        scanActiveTabCookies(sendResponse);
+        scanActiveTabCookies(message, sendResponse);
         return true; // Indicates we'll respond asynchronously
         
       case "deleteCookie":

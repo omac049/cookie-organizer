@@ -145,6 +145,7 @@
       background-color: var(--stats-bg);
       padding: 15px;
       border-radius: 6px;
+      transition: opacity 0.3s ease;
     }
     .stat-item {
       flex: 1 0 calc(33% - 12px);
@@ -1571,16 +1572,48 @@
   
   <div class="category-stats">
     <div class="stat-item">
-      <div class="stat-value" id="totalCookies">-</div>
+      <div class="stat-value" id="totalCookies">0</div>
       <div class="stat-label">Total Cookies</div>
     </div>
     <div class="stat-item">
-      <div class="stat-value" id="primaryCount">-</div>
+      <div class="stat-value" id="primaryCount">0</div>
       <div class="stat-label">Primary</div>
     </div>
     <div class="stat-item">
-      <div class="stat-value" id="thirdPartyCount">-</div>
-      <div class="stat-label">Third-party</div>
+      <div class="stat-value" id="secondaryCount">0</div>
+      <div class="stat-label">Secondary</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="thirdPartyCount">0</div>
+      <div class="stat-label">Third-Party</div>
+    </div>
+  </div>
+  
+  <!-- Purpose stats -->
+  <div class="category-stats">
+    <div class="stat-item necessary">
+      <div class="stat-value" id="necessaryCount">0</div>
+      <div class="stat-label">Necessary</div>
+    </div>
+    <div class="stat-item preferences">
+      <div class="stat-value" id="preferencesCount">0</div>
+      <div class="stat-label">Preferences</div>
+    </div>
+    <div class="stat-item analytics">
+      <div class="stat-value" id="analyticsCount">0</div>
+      <div class="stat-label">Analytics</div>
+    </div>
+    <div class="stat-item marketing">
+      <div class="stat-value" id="marketingCount">0</div>
+      <div class="stat-label">Marketing</div>
+    </div>
+    <div class="stat-item social">
+      <div class="stat-value" id="socialCount">0</div>
+      <div class="stat-label">Social</div>
+    </div>
+    <div class="stat-item unknown">
+      <div class="stat-value" id="unknownCount">0</div>
+      <div class="stat-label">Unknown</div>
     </div>
   </div>
   
@@ -1592,30 +1625,6 @@
       <div class="category-tab" data-tab="compareTab">Compare</div>
       <div class="category-tab" data-tab="chartsTab">Charts</div>
       <div class="category-tab" data-tab="logsTab">Logs</div>
-    </div>
-    
-    <!-- Purpose Categories Summary -->
-    <div class="purpose-categories-summary">
-      <div class="purpose-category">
-        <div class="color-indicator necessary-color"></div>
-        <div class="category-name"><span class="purpose-icon necessary"></span>Necessary</div>
-        <div class="cookie-count"><span id="necessaryCookieCount">0</span> cookies</div>
-      </div>
-      <div class="purpose-category">
-        <div class="color-indicator analytics-color"></div>
-        <div class="category-name"><span class="purpose-icon analytics"></span>Analytics</div>
-        <div class="cookie-count"><span id="analyticsCookieCount">0</span> cookies</div>
-      </div>
-      <div class="purpose-category">
-        <div class="color-indicator marketing-color"></div>
-        <div class="category-name"><span class="purpose-icon marketing"></span>Marketing</div>
-        <div class="cookie-count"><span id="marketingCookieCount">0</span> cookies</div>
-      </div>
-      <div class="purpose-category">
-        <div class="color-indicator unknown-color"></div>
-        <div class="category-name"><span class="purpose-icon unknown"></span>Unknown</div>
-        <div class="cookie-count"><span id="unknownCookieCount">0</span> cookies</div>
-      </div>
     </div>
     
     <!-- Add search box and filter toggle -->

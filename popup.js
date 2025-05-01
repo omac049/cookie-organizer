@@ -8,6 +8,25 @@ const relationshipNames = {
   "thirdParty": "Third-Party"
 };
 
+// Add purpose category names
+const purposeNames = {
+  "necessary": "Necessary",
+  "preferences": "Preferences",
+  "analytics": "Analytics",
+  "marketing": "Marketing",
+  "social": "Social Media",
+  "unknown": "Unknown"
+};
+
+// Define global variables for selection and UI elements
+let selectedCookies = new Set();
+let bulkActionsBar;
+
+// Initialize these variables in the DOMContentLoaded event
+document.addEventListener("DOMContentLoaded", function() {
+  bulkActionsBar = document.getElementById("bulkActions");
+});
+
 // Define initializeTheme function at the beginning
 function initializeTheme() {
   try {
@@ -32,13 +51,12 @@ function initializeTheme() {
 // Define updateThemeIcon function
 function updateThemeIcon(theme) {
   const themeToggle = document.getElementById("themeToggle");
-  if (themeToggle) {
-    if (theme === "dark") {
-      themeToggle.innerHTML = "☀️"; // Sun emoji for dark mode (to switch to light)
-    } else {
-      themeToggle.innerHTML = "🌙"; // Moon emoji for light mode (to switch to dark)
-    }
-  }
+  if (!themeToggle) return; // Early return if element doesn't exist
+  
+  const toggleIcon = themeToggle.querySelector(".toggle-icon");
+  if (!toggleIcon) return; // Early return if icon element doesn't exist
+  
+  toggleIcon.textContent = theme === "dark" ? "☀️" : "🌙";
 }
 
 // Define scanCurrentSiteCookies function at the very top of the file, before any event listeners
@@ -56,35 +74,69 @@ function scanCurrentSiteCookies() {
     if (!tabs || !tabs[0]) {
       console.error("No active tab found");
       if (loadingIndicator) loadingIndicator.style.display = "none";
+      
+      // Display error message to user
+      const errorMsg = document.createElement("div");
+      errorMsg.className = "error-message";
+      errorMsg.textContent = "Unable to get active tab information.";
+      document.body.appendChild(errorMsg);
       return;
     }
     
     const currentTab = tabs[0];
     siteUrl = currentTab.url;
     
-    // Request cookies from the background script
+    console.log("Getting cookies for URL:", siteUrl);
+    
+    // Send the actual URL to the background script
     chrome.runtime.sendMessage({
-      action: "getCookies",
-      url: currentTab.url
+      action: "scanCurrentSiteCookies",
+      url: siteUrl
     }, function(response) {
       if (chrome.runtime.lastError) {
         console.error("Error getting cookies:", chrome.runtime.lastError);
         if (loadingIndicator) loadingIndicator.style.display = "none";
+        
+        // Display error message to user
+        const errorMsg = document.createElement("div");
+        errorMsg.className = "error-message";
+        errorMsg.textContent = "Error communicating with the background script: " + chrome.runtime.lastError.message;
+        document.body.appendChild(errorMsg);
         return;
       }
       
-      if (!response || !response.cookies) {
-        console.error("Invalid response from background script");
+      if (!response) {
+        console.error("No response from background script");
         if (loadingIndicator) loadingIndicator.style.display = "none";
+        
+        // Display error message to user
+        const errorMsg = document.createElement("div");
+        errorMsg.className = "error-message";
+        errorMsg.textContent = "No response from background script. Please check the extension permissions.";
+        document.body.appendChild(errorMsg);
         return;
       }
+
+      if (!response.success) {
+        console.error("Error from background script:", response.error);
+        if (loadingIndicator) loadingIndicator.style.display = "none";
+        
+        // Display error message to user
+        const errorMsg = document.createElement("div");
+        errorMsg.className = "error-message";
+        errorMsg.textContent = "Error scanning cookies: " + (response.error || "Unknown error");
+        document.body.appendChild(errorMsg);
+        return;
+      }
+      
+      console.log("Received cookies:", response.cookies ? response.cookies.length : 0);
       
       // Store cookies and update UI
-      siteCookies = response.cookies;
-      cookiesByPurpose = response.cookiesByPurpose;
-      cookiesByRelationship = response.cookiesByRelationship;
+      siteCookies = response.cookies || [];
+      cookiesByPurpose = response.cookiesByPurpose || {};
+      cookiesByRelationship = response.cookiesByRelationship || {};
       
-      // Update statistics
+      // Update statistics with comprehensive stats
       if (response.stats && typeof updateStats === "function") {
         updateStats(response.stats);
       }
@@ -465,10 +517,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   
   // Event listener for theme toggle
-  themeToggle.addEventListener("click", toggleTheme);
-  
-  // Initialize theme on load
-  initializeTheme();
+  document.addEventListener("DOMContentLoaded", () => {
+    const themeToggleElement = document.getElementById("themeToggle");
+    if (themeToggleElement) {
+      themeToggleElement.addEventListener("click", toggleTheme);
+    }
+    
+    // Initialize theme on load
+    initializeTheme();
+  });
   
   // Copy cookie value to clipboard
   function addCopyButton(cookieValue, cookieValueElement) {
@@ -511,7 +568,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   // Define createCookieItemHTML function to fix the reference error
   function createCookieItemHTML(cookie) {
-    if (!cookie) return '';
+    if (!cookie) return "";
     
     // Format expiration date
     let expirationText = "Session cookie";
@@ -532,9 +589,9 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Create badges for cookie attributes
     const badges = [];
-    if (cookie.secure) badges.push('<span class="badge secure">Secure</span>');
-    if (cookie.httpOnly) badges.push('<span class="badge httponly">HttpOnly</span>');
-    if (!cookie.expirationDate) badges.push('<span class="badge session">Session</span>');
+    if (cookie.secure) badges.push("<span class=\"badge secure\">Secure</span>");
+    if (cookie.httpOnly) badges.push("<span class=\"badge httponly\">HttpOnly</span>");
+    if (!cookie.expirationDate) badges.push("<span class=\"badge session\">Session</span>");
     
     // Add relationship badge if available
     if (cookie.relationshipCategory) {
@@ -583,55 +640,149 @@ document.addEventListener("DOMContentLoaded", () => {
     return relationshipNames[relationship] || relationship;
   }
 
-  // Handle decode button click
+  // Define a cookie value interpreter that can decode common formats
+  const cookieValueInterpreter = {
+    interpret: function(value) {
+      if (!value) {
+        return { success: false, result: "Empty value", type: null };
+      }
+      
+      try {
+        // Try to decode as JSON
+        if ((value.startsWith("{") && value.endsWith("}")) || 
+            (value.startsWith("[") && value.endsWith("]"))) {
+          try {
+            const parsed = JSON.parse(value);
+            return {
+              success: true,
+              result: `<pre class="json-value">${JSON.stringify(parsed, null, 2)}</pre>`,
+              type: "json"
+            };
+          } catch (e) {
+            // Not valid JSON, continue to other checks
+          }
+        }
+        
+        // Try to decode as Base64
+        if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length % 4 === 0) {
+          try {
+            const decoded = atob(value);
+            // Check if decoded result is printable
+            if (/^[\x20-\x7E]*$/.test(decoded)) {
+              return {
+                success: true,
+                result: `<div class="decoded-value">Base64 decoded: <pre>${decoded}</pre></div>`,
+                type: "base64"
+              };
+            }
+          } catch (e) {
+            // Not valid Base64, continue to other checks
+          }
+        }
+        
+        // Try to decode as JWT (JSON Web Token)
+        if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)) {
+          try {
+            const parts = value.split(".");
+            const header = JSON.parse(atob(parts[0]));
+            const payload = JSON.parse(atob(parts[1]));
+            
+            return {
+              success: true,
+              result: `<div class="decoded-value jwt-value">
+                <div class="jwt-section">
+                  <h4>Header</h4>
+                  <pre>${JSON.stringify(header, null, 2)}</pre>
+                </div>
+                <div class="jwt-section">
+                  <h4>Payload</h4>
+                  <pre>${JSON.stringify(payload, null, 2)}</pre>
+                </div>
+                <div class="jwt-section">
+                  <h4>Signature</h4>
+                  <code>${parts[2]}</code>
+                </div>
+              </div>`,
+              type: "jwt"
+            };
+          } catch (e) {
+            // Not a valid JWT, continue to other checks
+          }
+        }
+        
+        // Try to decode as URL-encoded
+        if (value.includes("=") && value.includes("&")) {
+          try {
+            const decoded = decodeURIComponent(value);
+            if (decoded !== value) {
+              return {
+                success: true,
+                result: `<div class="decoded-value">URL decoded: <pre>${decoded}</pre></div>`,
+                type: "url"
+              };
+            }
+          } catch (e) {
+            // Not valid URL-encoded, continue to other checks
+          }
+        }
+        
+        // If no specific format detected, just return the original value
+        return { success: false, result: value, type: null };
+      } catch (error) {
+        console.error("Error interpreting cookie value:", error);
+        return { success: false, result: "Error decoding value", type: null };
+      }
+    }
+  };
+
   function handleDecodeButtonClick(e) {
     const btn = e.target;
-    const cookieItem = btn.closest('.cookie-item');
-    const valueContainer = cookieItem.querySelector('.cookie-value');
-    const originalValue = valueContainer.getAttribute('data-value');
+    const cookieItem = btn.closest(".cookie-item");
+    const valueContainer = cookieItem.querySelector(".cookie-value");
+    const originalValue = valueContainer.getAttribute("data-value");
     
     // Toggle between original and decoded view
-    if (btn.textContent === 'Decode') {
+    if (btn.textContent === "Decode") {
       // Decode the cookie value
       const decodedData = cookieValueInterpreter.interpret(originalValue);
       
       if (decodedData.success) {
         // Save original HTML and show decoded value
-        valueContainer.setAttribute('data-original-html', valueContainer.innerHTML);
+        valueContainer.setAttribute("data-original-html", valueContainer.innerHTML);
         valueContainer.innerHTML = decodedData.result;
-        btn.textContent = 'Show Original';
-        btn.classList.add('decoded');
+        btn.textContent = "Show Original";
+        btn.classList.add("decoded");
         
         // Add class to indicate decoded format
         if (decodedData.type) {
-          cookieItem.setAttribute('data-decoded-type', decodedData.type);
+          cookieItem.setAttribute("data-decoded-type", decodedData.type);
         }
       } else {
-        btn.textContent = 'Cannot Decode';
+        btn.textContent = "Cannot Decode";
         setTimeout(() => {
-          btn.textContent = 'Decode';
+          btn.textContent = "Decode";
         }, 2000);
       }
     } else {
       // Restore original view
-      const originalHTML = valueContainer.getAttribute('data-original-html');
+      const originalHTML = valueContainer.getAttribute("data-original-html");
       if (originalHTML) {
         valueContainer.innerHTML = originalHTML;
       } else {
         valueContainer.textContent = originalValue;
       }
-      btn.textContent = 'Decode';
-      btn.classList.remove('decoded');
-      cookieItem.removeAttribute('data-decoded-type');
+      btn.textContent = "Decode";
+      btn.classList.remove("decoded");
+      cookieItem.removeAttribute("data-decoded-type");
     }
   }
 
-  // Set up decode buttons
+  // Fix string quotes in this function
   function setupDecodeButtons() {
-    document.querySelectorAll('.decode-btn').forEach(btn => {
+    document.querySelectorAll(".decode-btn").forEach(btn => {
       // Remove existing listeners before adding new ones
-      btn.removeEventListener('click', handleDecodeButtonClick);
-      btn.addEventListener('click', handleDecodeButtonClick);
+      btn.removeEventListener("click", handleDecodeButtonClick);
+      btn.addEventListener("click", handleDecodeButtonClick);
     });
   }
 
@@ -1328,8 +1479,8 @@ document.addEventListener("DOMContentLoaded", function() {
   }
   
   // Initialize the comparison manager
-  if (typeof comparisonManager !== "undefined" && comparisonManager) {
-    comparisonManager.init();
+  if (typeof safeComparisonManager !== "undefined" && safeComparisonManager) {
+    safeComparisonManager.init();
   }
   
   // Set up event listeners
@@ -1373,10 +1524,8 @@ document.addEventListener("DOMContentLoaded", function() {
       
       // If Compare tab is clicked, make sure it's properly initialized
       if (clickedTabId === "compareTab") {
-        if (typeof comparisonManager !== "undefined" && comparisonManager) {
-          if (typeof comparisonManager.init === "function") {
-            comparisonManager.init();
-          }
+        if (typeof safeComparisonManager !== "undefined" && safeComparisonManager) {
+          safeComparisonManager.init();
         }
       }
     });
@@ -1392,8 +1541,8 @@ document.addEventListener("DOMContentLoaded", function() {
   }
   
   // Initialize comparison manager
-  if (typeof comparisonManager !== "undefined" && comparisonManager && typeof comparisonManager.init === "function") {
-    comparisonManager.init();
+  if (typeof safeComparisonManager !== "undefined" && safeComparisonManager && typeof safeComparisonManager.init === "function") {
+    safeComparisonManager.init();
   }
   
   // Load cookies automatically when the popup opens
@@ -1402,9 +1551,9 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 }); 
 
-// Ensure comparisonManager has access to formatDate function
-if (typeof comparisonManager !== "undefined" && comparisonManager) {
-  comparisonManager.formatDate = function(timestamp) {
+// Ensure safeComparisonManager has access to formatDate function
+if (typeof safeComparisonManager !== "undefined" && safeComparisonManager) {
+  safeComparisonManager.formatDate = function(timestamp) {
     if (!timestamp) return "Session cookie";
     return new Date(timestamp * 1000).toLocaleString();
   };
@@ -1412,7 +1561,7 @@ if (typeof comparisonManager !== "undefined" && comparisonManager) {
 
 // Cookie snapshot and comparison manager
 // Assign methods to the global window.comparisonManager to avoid duplicate declaration
-window.comparisonManager = {
+window.safeComparisonManager = {
   snapshots: [],
   selectedSnapshots: [],
   
@@ -1421,15 +1570,38 @@ window.comparisonManager = {
     return new Date(timestamp * 1000).toLocaleString();
   },
   
+  loadSnapshots: function() {
+    try {
+      console.log("Loading saved snapshots");
+      const savedSnapshots = localStorage.getItem("cookieOrganizerSnapshots");
+      if (savedSnapshots) {
+        this.snapshots = JSON.parse(savedSnapshots);
+        console.log(`Loaded ${this.snapshots.length} snapshots`);
+      } else {
+        console.log("No saved snapshots found");
+        this.snapshots = [];
+      }
+    } catch (error) {
+      console.error("Error loading snapshots:", error);
+      this.snapshots = [];
+    }
+  },
+  
   init: function() {
     try {
-      console.log("Initializing comparison manager");
+      console.log("Initializing safe comparison manager");
       
       // Get DOM elements
       const takeSnapshotBtn = document.getElementById("takeSnapshotBtn");
       const clearSnapshotsBtn = document.getElementById("clearSnapshotsBtn");
       const snapshotsList = document.getElementById("snapshotsList");
       const compareTypeFilter = document.getElementById("compareTypeFilter");
+      
+      // Ensure loadSnapshots is defined before calling it
+      if (typeof this.loadSnapshots !== "function") {
+        console.error("loadSnapshots is not defined");
+        return;
+      }
       
       // Load previously saved snapshots
       this.loadSnapshots();
@@ -1458,25 +1630,7 @@ window.comparisonManager = {
       // Initial render
       this.renderSnapshotsList();
     } catch (error) {
-      console.error("Error initializing comparison manager:", error);
-    }
-  },
-
-  // Add loadSnapshots method to the comparisonManager object
-  loadSnapshots: function() {
-    try {
-      console.log("Loading saved snapshots");
-      const savedSnapshots = localStorage.getItem("cookieOrganizerSnapshots");
-      if (savedSnapshots) {
-        this.snapshots = JSON.parse(savedSnapshots);
-        console.log(`Loaded ${this.snapshots.length} snapshots`);
-      } else {
-        console.log("No saved snapshots found");
-        this.snapshots = [];
-      }
-    } catch (error) {
-      console.error("Error loading snapshots:", error);
-      this.snapshots = [];
+      console.error("Error initializing safe comparison manager:", error);
     }
   },
   
@@ -1855,13 +2009,11 @@ window.comparisonManager = {
   }
 };
 
-// ... existing code ...
 
-// Initialize comparison manager
-if (typeof comparisonManager !== "undefined" && comparisonManager.init) {
-  comparisonManager.init();
+// Initialize safe comparison manager
+if (typeof safeComparisonManager !== "undefined" && safeComparisonManager.init) {
+  safeComparisonManager.init();
 }
-// ... existing code ...
 
 // Implement a proper renderCookiesByRelationship function
 function renderCookiesByRelationship(data, searchTerm = "", page = 1) {
@@ -1919,7 +2071,8 @@ function renderCookiesByRelationship(data, searchTerm = "", page = 1) {
     
     // Add individual cookies
     filteredCookies.forEach(cookie => {
-      const cookieHTML = createCookieItemHTML(cookie);
+      // Use window.createCookieItemHTML to ensure global access
+      const cookieHTML = window.createCookieItemHTML(cookie);
       cookiesContainer.insertAdjacentHTML("beforeend", cookieHTML);
     });
   });
@@ -1989,7 +2142,8 @@ function renderAllCookies(cookies, searchTerm = "", page = 1) {
   
   // Add individual cookies
   filteredCookies.forEach(cookie => {
-    const cookieHTML = createCookieItemHTML(cookie);
+    // Use window.createCookieItemHTML to ensure global access
+    const cookieHTML = window.createCookieItemHTML(cookie);
     cookiesContainer.insertAdjacentHTML("beforeend", cookieHTML);
   });
   
@@ -2078,8 +2232,8 @@ function restoreCheckboxSelections() {
 }
 
 // Change the problematic condition that's throwing an error
-if (typeof comparisonManager !== "undefined" && comparisonManager) {
-  comparisonManager.formatDate = function(timestamp) {
+if (typeof safeComparisonManager !== "undefined" && safeComparisonManager) {
+  safeComparisonManager.formatDate = function(timestamp) {
     if (!timestamp) return "Session cookie";
     return new Date(timestamp * 1000).toLocaleString();
   };
@@ -2141,144 +2295,61 @@ function safeApplyCookieFilters(cookie, searchTerm = "") {
 
 // Update the DOMContentLoaded event listener to use the safe functions
 document.addEventListener("DOMContentLoaded", function() {
-  console.log("Cookie Organizer extension loaded");
+  console.log("DOM content loaded - using safe functions");
   
-  // Access elements
-  const refreshButton = document.getElementById("refreshButton");
-  const searchBox = document.getElementById("searchBox");
-  const themeToggle = document.getElementById("themeToggle");
+  // Initialize tab visibility and event listeners
+  initializeTabs();
   
-  // Initialize theme safely
-  safeInitializeTheme();
-  
-  // Set up event listeners
-  if (refreshButton && typeof scanCurrentSiteCookies === "function") {
-    refreshButton.addEventListener("click", scanCurrentSiteCookies);
-  }
-  
-  if (searchBox && typeof renderCookies === "function" && typeof debounce === "function") {
-    searchBox.addEventListener("input", debounce(function() {
-      renderCookies(searchBox.value);
-    }, 300));
-  }
-  
-  if (themeToggle && typeof toggleTheme === "function") {
-    themeToggle.addEventListener("click", toggleTheme);
-  }
-  
-  // Set up tab navigation
-  document.querySelectorAll(".category-tab").forEach(tab => {
-    tab.addEventListener("click", function() {
-      // Get current active tab
-      const currentActiveTab = document.querySelector(".category-tab.active");
-      const currentActiveContent = document.querySelector(".tab-content.active");
-      
-      // Get clicked tab and corresponding content
-      const clickedTabId = this.getAttribute("data-tab");
-      const clickedContent = document.getElementById(clickedTabId);
-      
-      // Remove active class from current tab/content
-      if (currentActiveTab) currentActiveTab.classList.remove("active");
-      if (currentActiveContent) currentActiveContent.classList.remove("active");
-      
-      // Add active class to clicked tab/content
-      this.classList.add("active");
-      if (clickedContent) clickedContent.classList.add("active");
-      
-      // If Charts tab is clicked, render charts
-      if (clickedTabId === "chartsTab" && typeof renderCharts === "function") {
-        renderCharts();
-      }
-    });
-  });
-  
-  // Load cookies automatically when the popup opens
-  if (typeof loadCookies === "function") {
-    loadCookies();
-  }
-});
-
-// Change the problematic condition that's throwing an error
-if (typeof comparisonManager !== "undefined" && comparisonManager) {
-  comparisonManager.formatDate = function(timestamp) {
-    if (!timestamp) return "Session cookie";
-    return new Date(timestamp * 1000).toLocaleString();
-  };
-}
-
-// Replace with:
-// Define a safe comparison manager that can be used throughout the code
-var safeComparisonManager = {
-  snapshots: [],
-  selectedSnapshots: [],
-  
-  init: function() {
-    try {
-      console.log("Initializing safe comparison manager");
-      
-      // Get DOM elements
-      const takeSnapshotBtn = document.getElementById("takeSnapshotBtn");
-      const clearSnapshotsBtn = document.getElementById("clearSnapshotsBtn");
-      const snapshotsList = document.getElementById("snapshotsList");
-      const compareTypeFilter = document.getElementById("compareTypeFilter");
-      
-      // Load previously saved snapshots
-      this.loadSnapshots();
-      
-      // Event listeners
-      if (takeSnapshotBtn) {
-        takeSnapshotBtn.addEventListener("click", () => this.takeSnapshot());
-      }
-      
-      if (clearSnapshotsBtn) {
-        clearSnapshotsBtn.addEventListener("click", () => this.clearSnapshots());
-      }
-      
-      if (compareTypeFilter) {
-        compareTypeFilter.addEventListener("change", () => {
-          if (this.selectedSnapshots.length === 2) {
-            this.compareSnapshots(
-              this.selectedSnapshots[0], 
-              this.selectedSnapshots[1],
-              compareTypeFilter.value
-            );
-          }
-        });
-      }
-      
-      // Initial render
-      this.renderSnapshotsList();
-    } catch (error) {
-      console.error("Error initializing comparison manager:", error);
+  // Initialize purpose stats visibility based on active tab
+  const activeTabId = document.querySelector(".tab-content.active")?.id;
+  const purposeStats = document.querySelector(".category-stats:nth-of-type(2)");
+  if (purposeStats) {
+    if (activeTabId === "byPurposeTab") {
+      purposeStats.style.display = "flex";
+      setTimeout(() => {
+        purposeStats.style.opacity = "1";
+      }, 10);
+    } else {
+      purposeStats.style.opacity = "0";
+      setTimeout(() => {
+        if (activeTabId !== "byPurposeTab") {
+          purposeStats.style.display = "none";
+        }
+      }, 300);
     }
-  },
-  
-  // Other methods would be defined here, matching the original comparisonManager
-  
-  // Simplified formatDate to ensure it's available
-  formatDate: function(timestamp) {
-    if (!timestamp) return "Session cookie";
-    return new Date(timestamp * 1000).toLocaleString();
   }
-};
-
-// Add to the DOMContentLoaded event listener
-document.addEventListener("DOMContentLoaded", function() {
-  // After other initializations
   
-  // Initialize safe comparison manager
-  safeComparisonManager.init();
-  
-  // Set up tab navigation with safe comparison manager
+  // Set up event listeners for tab switching
   document.querySelectorAll(".category-tab").forEach(tab => {
     tab.addEventListener("click", function() {
       // Get clicked tab and corresponding content
       const clickedTabId = this.getAttribute("data-tab");
+      
+      // Update purpose stats visibility
+      const purposeStats = document.querySelector(".category-stats:nth-of-type(2)");
+      if (purposeStats) {
+        if (clickedTabId === "byPurposeTab") {
+          purposeStats.style.display = "flex";
+          setTimeout(() => {
+            purposeStats.style.opacity = "1";
+          }, 10);
+        } else {
+          purposeStats.style.opacity = "0";
+          setTimeout(() => {
+            if (clickedTabId !== "byPurposeTab") {
+              purposeStats.style.display = "none";
+            }
+          }, 300);
+        }
+      }
       
       // If Compare tab is clicked, make sure it's properly initialized
       if (clickedTabId === "compareTab") {
         safeComparisonManager.init();
       }
+      
+      // Show the selected tab
+      showTab(clickedTabId);
     });
   });
 });
@@ -2367,6 +2438,24 @@ function renderCookies(searchTerm = "") {
     if (noCookiesEl) noCookiesEl.style.display = "none";
   }
   
+  // Manage visibility of purpose stats based on active tab
+  const purposeStats = document.querySelector(".category-stats:nth-of-type(2)");
+  if (purposeStats) {
+    if (activeTabId === "byPurposeTab") {
+      purposeStats.style.display = "flex";
+      setTimeout(() => {
+        purposeStats.style.opacity = "1";
+      }, 10);
+    } else {
+      purposeStats.style.opacity = "0";
+      setTimeout(() => {
+        if (activeTabId !== "byPurposeTab") {
+          purposeStats.style.display = "none";
+        }
+      }, 300);
+    }
+  }
+  
   // Render cookies based on active tab
   if (activeTabId === "byPurposeTab" && cookiesByPurpose) {
     // Use renderCookiesByPurpose if it exists, otherwise log error
@@ -2404,14 +2493,36 @@ function updateStats(stats) {
   
   if (!stats) return;
   
+  // Update total and relationship counts
   const totalCookiesEl = document.getElementById("totalCookies");
   const primaryCountEl = document.getElementById("primaryCount");
+  const secondaryCountEl = document.getElementById("secondaryCount");
   const thirdPartyCountEl = document.getElementById("thirdPartyCount");
   const siteUrlEl = document.getElementById("siteUrl");
   
   if (totalCookiesEl) totalCookiesEl.textContent = stats.total || 0;
   if (primaryCountEl) primaryCountEl.textContent = stats.primary || 0;
+  if (secondaryCountEl) secondaryCountEl.textContent = stats.secondary || 0;
   if (thirdPartyCountEl) thirdPartyCountEl.textContent = stats.thirdParty || 0;
+  
+  // Update purpose counts if they exist
+  if (stats.byPurpose) {
+    const necessaryCountEl = document.getElementById("necessaryCount");
+    const preferencesCountEl = document.getElementById("preferencesCount");
+    const analyticsCountEl = document.getElementById("analyticsCount");
+    const marketingCountEl = document.getElementById("marketingCount");
+    const socialCountEl = document.getElementById("socialCount");
+    const unknownCountEl = document.getElementById("unknownCount");
+    
+    if (necessaryCountEl) necessaryCountEl.textContent = stats.byPurpose.necessary || 0;
+    if (preferencesCountEl) preferencesCountEl.textContent = stats.byPurpose.preferences || 0;
+    if (analyticsCountEl) analyticsCountEl.textContent = stats.byPurpose.analytics || 0;
+    if (marketingCountEl) marketingCountEl.textContent = stats.byPurpose.marketing || 0;
+    if (socialCountEl) socialCountEl.textContent = stats.byPurpose.social || 0;
+    if (unknownCountEl) unknownCountEl.textContent = stats.byPurpose.unknown || 0;
+  }
+  
+  // Update site URL
   if (siteUrlEl && siteUrl) {
     try {
       const url = new URL(siteUrl);
@@ -2498,46 +2609,37 @@ function renderCookiesByPurpose(data, searchTerm = "") {
     
     const cookies = data[purpose];
     
-    // Filter cookies based on search term
-    const filteredCookies = searchTerm ? 
-      cookies.filter(cookie => 
-        cookie.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        cookie.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (cookie.value && cookie.value.toLowerCase().includes(searchTerm.toLowerCase()))
-      ) : cookies;
+    // Filter cookies based on search term and advanced filters
+    const filteredCookies = cookies.filter(cookie => safeApplyCookieFilters(cookie, searchTerm));
     
     if (filteredCookies.length === 0) return;
     
-    // Create category container
-    const categoryItem = document.createElement("div");
-    categoryItem.className = `category-item ${purpose}`;
+    // Create purpose category item
+    const purposeItem = document.createElement("div");
+    purposeItem.className = `purpose-item ${purpose}`;
     
-    // Category header
-    const categoryHeader = document.createElement("div");
-    categoryHeader.className = "category-header";
-    categoryHeader.dataset.purpose = purpose;
-    
-    const purposeDescription = typeof getPurposeDescription === "function" ? 
-      getPurposeDescription(purpose) : purpose;
-    
-    categoryHeader.innerHTML = `
-      <div class="category-title">${purposeNames[purpose] || purpose}</div>
-      <div class="category-description">${purposeDescription}</div>
+    // Purpose header
+    const purposeHeader = document.createElement("div");
+    purposeHeader.className = "category-header";
+    purposeHeader.dataset.purpose = purpose;
+    purposeHeader.innerHTML = `
+      <div><span class="purpose-icon ${purpose}"></span>${purposeNames[purpose] || purpose}</div>
       <div class="category-cookie-count">${filteredCookies.length} cookie${filteredCookies.length !== 1 ? "s" : ""}</div>
     `;
     
-    categoryItem.appendChild(categoryHeader);
+    // Add purpose item to container first
+    purposeItem.appendChild(purposeHeader);
     
-    // Container for cookies in this category
+    // Container for cookies in this purpose
     const cookiesContainer = document.createElement("div");
     cookiesContainer.className = "category-cookies";
     cookiesContainer.dataset.purpose = purpose;
-    categoryItem.appendChild(cookiesContainer);
+    purposeItem.appendChild(cookiesContainer);
     
-    // Add to DOM
-    byPurposeTab.appendChild(categoryItem);
+    // Add to DOM before adding cookies
+    byPurposeTab.appendChild(purposeItem);
     
-    // Add cookies to container
+    // Add individual cookies
     filteredCookies.forEach(cookie => {
       const cookieHTML = createCookieItemHTML(cookie);
       cookiesContainer.insertAdjacentHTML("beforeend", cookieHTML);
@@ -2551,6 +2653,31 @@ function renderCookiesByPurpose(data, searchTerm = "") {
     noResults.textContent = "No cookies match your current filters.";
     byPurposeTab.appendChild(noResults);
   }
+  
+  // Add expiration warnings after rendering
+  addExpirationWarnings();
+  
+  // Setup event handlers
+  setupCategoryToggles();
+  addCopyButtonsToCookieValues();
+  setupCookieCheckboxes();
+  setupDecodeButtons();
+  
+  // Setup event listeners for delete buttons
+  document.querySelectorAll(".delete").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.preventDefault();
+      const cookieName = btn.dataset.cookieName;
+      const cookieDomain = btn.dataset.cookieDomain;
+      const cookiePath = btn.dataset.cookiePath;
+      
+      deleteCookie({
+        name: cookieName,
+        domain: cookieDomain,
+        path: cookiePath
+      });
+    });
+  });
 }
 
 // Add utility function for debouncing
@@ -2716,3 +2843,186 @@ function setupCategoryToggles() {
     });
   });
 }
+
+// Add auto-refresh functionality
+const autoRefresh = {
+  intervalId: null,
+  
+  init: function() {
+    const autoRefreshToggle = document.getElementById("autoRefreshToggle");
+    const autoRefreshInterval = document.getElementById("autoRefreshInterval");
+    
+    if (autoRefreshToggle) {
+      autoRefreshToggle.addEventListener("change", () => {
+        if (autoRefreshToggle.checked) {
+          const seconds = parseInt(autoRefreshInterval.value) || 30;
+          this.start(seconds);
+        } else {
+          this.stop();
+        }
+      });
+    }
+    
+    if (autoRefreshInterval) {
+      autoRefreshInterval.addEventListener("change", () => {
+        if (autoRefreshToggle.checked) {
+          const seconds = parseInt(autoRefreshInterval.value) || 30;
+          this.stop();
+          this.start(seconds);
+        }
+      });
+    }
+  },
+  
+  start: function(seconds) {
+    this.stop();
+    console.log(`Starting auto-refresh every ${seconds} seconds`);
+    
+    this.intervalId = setInterval(() => {
+      console.log("Auto-refreshing cookies...");
+      if (typeof scanCurrentSiteCookies === "function") {
+        scanCurrentSiteCookies();
+      }
+    }, seconds * 1000);
+    
+    // Show notification
+    const notification = document.getElementById("autoRefreshNotification");
+    if (notification) {
+      notification.textContent = `Auto-refresh active: ${seconds}s`;
+      notification.style.display = "block";
+    }
+  },
+  
+  stop: function() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+      
+      // Hide notification
+      const notification = document.getElementById("autoRefreshNotification");
+      if (notification) {
+        notification.style.display = "none";
+      }
+      
+      console.log("Auto-refresh stopped");
+    }
+  }
+};
+
+// Ensure the createCookieItemHTML is accessible globally
+// Make the createCookieItemHTML function accessible globally by moving it outside any closures
+window.createCookieItemHTML = function(cookie) {
+  if (!cookie) return "";
+  
+  // Format expiration date
+  let expirationText = "Session cookie";
+  let expirationWarning = "";
+  
+  if (cookie.expirationDate) {
+    const expDate = new Date(cookie.expirationDate * 1000);
+    expirationText = expDate.toLocaleString();
+    
+    // Add warning for cookies expiring within 3 days
+    const now = new Date();
+    const threeDaysFromNow = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000));
+    
+    if (expDate < threeDaysFromNow) {
+      expirationWarning = `<span class="expiration-warning" title="This cookie will expire soon">⚠️</span>`;
+    }
+  }
+  
+  // Create badges for cookie attributes
+  const badges = [];
+  if (cookie.secure) badges.push("<span class=\"badge secure\">Secure</span>");
+  if (cookie.httpOnly) badges.push("<span class=\"badge httponly\">HttpOnly</span>");
+  if (!cookie.expirationDate) badges.push("<span class=\"badge session\">Session</span>");
+  
+  // Add relationship badge if available
+  if (cookie.relationshipCategory) {
+    badges.push(`<span class="badge ${cookie.relationshipCategory}">${getRelationshipDescription(cookie.relationshipCategory)}</span>`);
+  }
+  
+  // Add purpose badge if available
+  if (cookie.purposeCategory) {
+    badges.push(`<span class="badge ${cookie.purposeCategory}">${typeof getPurposeDescription === "function" ? 
+      getPurposeDescription(cookie.purposeCategory) : cookie.purposeCategory}</span>`);
+  }
+  
+  // Generate cookie ID for selection
+  const cookieId = `${cookie.name}_${cookie.domain}_${cookie.path || "/"}`;
+  
+  // Generate cookie item HTML
+  return `
+    <div class="cookie-item" data-cookie-id="${cookieId}">
+      <input type="checkbox" class="cookie-checkbox" data-cookie-id="${cookieId}">
+      <div class="cookie-content">
+        <div class="cookie-header">
+          <div class="cookie-name-container">
+            <span class="cookie-name">${cookie.name}</span>
+            ${expirationWarning}
+          </div>
+          <div class="cookie-actions">
+            <button class="delete" data-cookie-name="${cookie.name}" data-cookie-domain="${cookie.domain}" data-cookie-path="${cookie.path || "/"}">Delete</button>
+          </div>
+        </div>
+        <div class="cookie-metadata">
+          ${badges.join("")}
+        </div>
+        <div class="cookie-details">
+          Domain: ${cookie.domain} | Path: ${cookie.path || "/"} | Expires: ${expirationText}
+        </div>
+        <div class="cookie-value" data-original-value="${encodeURIComponent(cookie.value || "")}">
+          ${cookie.value || "(empty value)"}
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+// Make the getRelationshipDescription function available globally
+function getRelationshipDescription(relationship) {
+  return relationshipNames[relationship] || relationship;
+}
+
+// Make the getPurposeDescription function available globally if not already defined
+if (typeof getPurposeDescription !== "function") {
+  function getPurposeDescription(purpose) {
+    return purposeNames[purpose] || purpose;
+  }
+}
+
+
+// Helper function to initialize tabs
+function initializeTabs() {
+  // Make sure the first tab is active by default
+  const tabs = document.querySelectorAll(".category-tab");
+  const tabContents = document.querySelectorAll(".tab-content");
+  
+  // If no tabs are active, activate the first one
+  if (!document.querySelector(".category-tab.active") && tabs.length > 0) {
+    tabs[0].classList.add("active");
+    const firstTabId = tabs[0].dataset.tab;
+    document.getElementById(firstTabId)?.classList.add("active");
+  }
+}
+
+// Helper function to show a specific tab
+function showTab(tabId) {
+  // Hide all tabs and remove active class
+  document.querySelectorAll(".category-tab").forEach(tab => {
+    tab.classList.remove("active");
+  });
+  
+  document.querySelectorAll(".tab-content").forEach(content => {
+    content.classList.remove("active");
+  });
+  
+  // Show the selected tab
+  document.querySelector(`.category-tab[data-tab="${tabId}"]`)?.classList.add("active");
+  document.getElementById(tabId)?.classList.add("active");
+  
+  // Render cookies for the active tab
+  renderCookies(document.getElementById("searchBox")?.value || "");
+}
+
+
