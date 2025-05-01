@@ -2994,34 +2994,135 @@ if (typeof getPurposeDescription !== "function") {
 
 // Helper function to initialize tabs
 function initializeTabs() {
-  // Make sure the first tab is active by default
-  const tabs = document.querySelectorAll(".category-tab");
+  // Get all tab elements
+  const tabs = document.querySelectorAll(".tab");
   const tabContents = document.querySelectorAll(".tab-content");
+  const currentTabName = document.getElementById("currentTabName");
+  const tabActionsBtn = document.getElementById("tabActionsBtn");
+  const tabActionsMenu = document.getElementById("tabActionsMenu");
   
-  // If no tabs are active, activate the first one
-  if (!document.querySelector(".category-tab.active") && tabs.length > 0) {
+  // Set default active tab if none is active
+  const activeTab = document.querySelector(".tab.active");
+  if (!activeTab && tabs.length > 0) {
     tabs[0].classList.add("active");
     const firstTabId = tabs[0].dataset.tab;
-    document.getElementById(firstTabId)?.classList.add("active");
+    const tabContent = document.getElementById(firstTabId);
+    if (tabContent) {
+      tabContent.classList.add("active");
+      if (currentTabName) {
+        currentTabName.textContent = tabs[0].textContent.trim();
+      }
+    }
+  }
+  
+  // Add click event listeners to all tabs
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      const tabId = tab.dataset.tab;
+      showTab(tabId);
+    });
+  });
+  
+  // Tab actions menu toggle
+  if (tabActionsBtn && tabActionsMenu) {
+    tabActionsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      tabActionsMenu.classList.toggle("visible");
+    });
+    
+    // Close menu when clicking outside
+    document.addEventListener("click", () => {
+      tabActionsMenu.classList.remove("visible");
+    });
+    
+    // Prevent menu close when clicking inside menu
+    tabActionsMenu.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+    
+    // Handle tab action buttons
+    const exportCurrentViewBtn = document.getElementById("exportCurrentView");
+    const refreshCurrentViewBtn = document.getElementById("refreshCurrentView");
+    
+    if (exportCurrentViewBtn) {
+      exportCurrentViewBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        // Trigger export dropdown for current view
+        document.getElementById("exportButton").click();
+        tabActionsMenu.classList.remove("visible");
+      });
+    }
+    
+    if (refreshCurrentViewBtn) {
+      refreshCurrentViewBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        // Refresh current view
+        document.getElementById("refreshButton").click();
+        tabActionsMenu.classList.remove("visible");
+      });
+    }
   }
 }
 
 // Helper function to show a specific tab
 function showTab(tabId) {
+  if (!tabId) return;
+  
+  const tabs = document.querySelectorAll(".tab");
+  const tabContents = document.querySelectorAll(".tab-content");
+  const currentTabName = document.getElementById("currentTabName");
+  
   // Hide all tabs and remove active class
-  document.querySelectorAll(".category-tab").forEach(tab => {
+  tabs.forEach(tab => {
     tab.classList.remove("active");
   });
   
-  document.querySelectorAll(".tab-content").forEach(content => {
+  tabContents.forEach(content => {
     content.classList.remove("active");
   });
   
   // Show the selected tab
-  document.querySelector(`.category-tab[data-tab="${tabId}"]`)?.classList.add("active");
-  document.getElementById(tabId)?.classList.add("active");
+  const selectedTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  const selectedContent = document.getElementById(tabId);
   
-  // Render cookies for the active tab
+  if (selectedTab) {
+    selectedTab.classList.add("active");
+  }
+  
+  if (selectedContent) {
+    selectedContent.classList.add("active");
+  }
+  
+  // Update the current tab indicator
+  if (currentTabName && selectedTab) {
+    currentTabName.textContent = selectedTab.textContent.trim();
+  }
+  
+  // Perform tab-specific actions
+  if (tabId === "chartsTab") {
+    renderCharts();
+  } else if (tabId === "logsTab") {
+    // Refresh logs when tab is shown
+    document.getElementById("refreshLogsBtn")?.click();
+  } else if (tabId === "monitoringTab") {
+    // Initialize monitoring tab if it's not already initialized
+    if (typeof initMonitoringTab === "function") {
+      initMonitoringTab();
+    }
+  } else if (tabId === "compareTab") {
+    // Initialize comparison view if available
+    try {
+      // Safely check and call initialization function for comparison tab
+      const compareTabContent = document.getElementById("compareTab");
+      if (compareTabContent && typeof initCompareTab === "function") {
+        initCompareTab();
+      }
+    } catch (error) {
+      console.error("Error initializing compare tab:", error);
+    }
+  }
+  
+  // Render cookies for the active tab with current search term
   renderCookies(document.getElementById("searchBox")?.value || "");
 }
 
@@ -3472,7 +3573,45 @@ document.addEventListener("DOMContentLoaded", function() {
     initializeTabs();
     setupCategoryToggles();
     initializeTheme();
-    initMonitoringTab(); // Initialize the new monitoring tab
+    
+    // Add event listener for tab actions menu items
+    const tabActionsBtn = document.getElementById("tabActionsBtn");
+    const tabActionsMenu = document.getElementById("tabActionsMenu");
+    
+    if (tabActionsBtn && tabActionsMenu) {
+      tabActionsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        tabActionsMenu.classList.toggle("visible");
+      });
+      
+      // Close menu when clicking outside
+      document.addEventListener("click", () => {
+        tabActionsMenu.classList.remove("visible");
+      });
+    }
+    
+    // Setup export and refresh actions
+    document.getElementById("exportCurrentView")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("exportButton")?.click();
+    });
+    
+    document.getElementById("refreshCurrentView")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("refreshButton")?.click();
+    });
+    
+    // Initialize specialized tabs when needed
+    const activeTab = document.querySelector(".tab.active");
+    if (activeTab) {
+      const activeTabId = activeTab.dataset.tab;
+      
+      if (activeTabId === "monitoringTab" && typeof initMonitoringTab === "function") {
+        initMonitoringTab();
+      } else if (activeTabId === "chartsTab") {
+        renderCharts();
+      }
+    }
   } catch (e) {
     console.error("Error initializing extension:", e);
     

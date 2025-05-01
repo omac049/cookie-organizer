@@ -1754,6 +1754,145 @@
     .change-expired {
       color: #607d8b;
     }
+
+    /* New Tab Navigation Structure Styles */
+    .tab-nav {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 15px;
+      background-color: var(--stats-bg);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .tab-categories {
+      display: flex;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .tab-category {
+      flex: 1;
+      min-width: 150px;
+      border-right: 1px solid var(--border-color);
+    }
+
+    .tab-category:last-child {
+      border-right: none;
+    }
+
+    .category-header {
+      padding: 8px 12px;
+      background-color: var(--header-bg);
+      font-weight: bold;
+      text-align: center;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .category-tabs {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .category-tabs .tab {
+      padding: 8px 15px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-color);
+      transition: background-color 0.2s;
+      font-size: 13px;
+    }
+
+    .category-tabs .tab:last-child {
+      border-bottom: none;
+    }
+
+    .category-tabs .tab:hover {
+      background-color: var(--hover-bg);
+    }
+
+    .category-tabs .tab.active {
+      background-color: var(--primary-btn);
+      color: white;
+      font-weight: bold;
+    }
+
+    .current-tab-indicator {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      background-color: var(--bg-color);
+      border-top: 1px solid var(--border-color);
+    }
+
+    #currentTabName {
+      font-weight: bold;
+      font-size: 15px;
+    }
+
+    .tab-actions {
+      position: relative;
+    }
+
+    .tab-actions-btn {
+      background: none;
+      border: none;
+      font-size: 18px;
+      color: var(--text-color);
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+
+    .tab-actions-btn:hover {
+      background-color: var(--hover-bg);
+    }
+
+    .tab-actions-menu {
+      position: absolute;
+      right: 0;
+      top: 30px;
+      background-color: var(--bg-color);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      min-width: 150px;
+      display: none;
+    }
+
+    .tab-actions-menu.visible {
+      display: block;
+    }
+
+    .tab-actions-menu a {
+      display: block;
+      padding: 8px 12px;
+      text-decoration: none;
+      color: var(--text-color);
+    }
+
+    .tab-actions-menu a:hover {
+      background-color: var(--hover-bg);
+    }
+
+    /* Responsive adjustments for smaller screens */
+    @media (max-width: 600px) {
+      .tab-categories {
+        flex-direction: column;
+      }
+      
+      .tab-category {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+      
+      .tab-category:last-child {
+        border-bottom: none;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1832,14 +1971,50 @@
   </div>
   
   <div class="tabs">
-    <div class="tab-header">
-      <div class="tab" data-tab="byPurposeTab">By Purpose</div>
-      <div class="tab" data-tab="byRelationshipTab">By Relationship</div>
-      <div class="tab" data-tab="allCookiesTab">All Cookies</div>
-      <div class="tab" data-tab="compareTab">Compare</div>
-      <div class="tab" data-tab="chartsTab">Charts</div>
-      <div class="tab" data-tab="logsTab">Logs</div>
-      <div class="tab" data-tab="monitoringTab">Monitoring</div>
+    <!-- Reorganized tab navigation with categories -->
+    <div class="tab-nav">
+      <!-- Main navigation tabs -->
+      <div class="tab-categories">
+        <!-- View Category -->
+        <div class="tab-category">
+          <div class="category-header">View</div>
+          <div class="category-tabs">
+            <div class="tab active" data-tab="byPurposeTab">By Purpose</div>
+            <div class="tab" data-tab="byRelationshipTab">By Relationship</div>
+            <div class="tab" data-tab="allCookiesTab">All Cookies</div>
+          </div>
+        </div>
+        
+        <!-- Analysis Category -->
+        <div class="tab-category">
+          <div class="category-header">Analysis</div>
+          <div class="category-tabs">
+            <div class="tab" data-tab="compareTab">Compare</div>
+            <div class="tab" data-tab="chartsTab">Charts</div>
+          </div>
+        </div>
+        
+        <!-- Tools Category -->
+        <div class="tab-category">
+          <div class="category-header">Tools</div>
+          <div class="category-tabs">
+            <div class="tab" data-tab="monitoringTab">Monitoring</div>
+            <div class="tab" data-tab="logsTab">Logs</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Current tab indicator -->
+      <div class="current-tab-indicator">
+        <span id="currentTabName">By Purpose</span>
+        <div class="tab-actions">
+          <button id="tabActionsBtn" class="tab-actions-btn" title="Tab Actions">⋮</button>
+          <div id="tabActionsMenu" class="tab-actions-menu">
+            <a href="#" id="exportCurrentView">Export Current View</a>
+            <a href="#" id="refreshCurrentView">Refresh</a>
+          </div>
+        </div>
+      </div>
     </div>
     
     <!-- Add search box and filter toggle -->
