@@ -63,111 +63,121 @@ function updateThemeIcon(theme) {
 function scanCurrentSiteCookies() {
   console.log("Scanning current site cookies...");
   
-  // Show loading indicator if it exists
-  const loadingIndicator = document.getElementById("loadingIndicator");
-  if (loadingIndicator) {
-    loadingIndicator.style.display = "block";
-  }
-  
-  // Get the currently active tab via Chrome API
-  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-    if (!tabs || !tabs[0]) {
-      console.error("No active tab found");
-      if (loadingIndicator) loadingIndicator.style.display = "none";
-      
-      // Display error message to user
-      const errorMsg = document.createElement("div");
-      errorMsg.className = "error-message";
-      errorMsg.textContent = "Unable to get active tab information.";
-      document.body.appendChild(errorMsg);
-      return;
+  // Return a Promise that resolves when cookies are loaded
+  return new Promise((resolve, reject) => {
+    // Show loading indicator if it exists
+    const loadingIndicator = document.getElementById("loadingIndicator");
+    if (loadingIndicator) {
+      loadingIndicator.style.display = "block";
     }
     
-    const currentTab = tabs[0];
-    siteUrl = currentTab.url;
-    
-    console.log("Getting cookies for URL:", siteUrl);
-    
-    // Send the actual URL to the background script
-    chrome.runtime.sendMessage({
-      action: "scanCurrentSiteCookies",
-      url: siteUrl
-    }, function(response) {
-      if (chrome.runtime.lastError) {
-        console.error("Error getting cookies:", chrome.runtime.lastError);
+    // Get the currently active tab via Chrome API
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (!tabs || !tabs[0]) {
+        console.error("No active tab found");
         if (loadingIndicator) loadingIndicator.style.display = "none";
         
         // Display error message to user
         const errorMsg = document.createElement("div");
         errorMsg.className = "error-message";
-        errorMsg.textContent = "Error communicating with the background script: " + chrome.runtime.lastError.message;
+        errorMsg.textContent = "Unable to get active tab information.";
         document.body.appendChild(errorMsg);
+        reject(new Error("No active tab found"));
         return;
       }
       
-      if (!response) {
-        console.error("No response from background script");
-        if (loadingIndicator) loadingIndicator.style.display = "none";
+      const currentTab = tabs[0];
+      siteUrl = currentTab.url;
+      
+      console.log("Getting cookies for URL:", siteUrl);
+      
+      // Send the actual URL to the background script
+      chrome.runtime.sendMessage({
+        action: "scanCurrentSiteCookies",
+        url: siteUrl
+      }, function(response) {
+        if (chrome.runtime.lastError) {
+          console.error("Error getting cookies:", chrome.runtime.lastError);
+          if (loadingIndicator) loadingIndicator.style.display = "none";
+          
+          // Display error message to user
+          const errorMsg = document.createElement("div");
+          errorMsg.className = "error-message";
+          errorMsg.textContent = "Error communicating with the background script: " + chrome.runtime.lastError.message;
+          document.body.appendChild(errorMsg);
+          reject(chrome.runtime.lastError);
+          return;
+        }
         
-        // Display error message to user
-        const errorMsg = document.createElement("div");
-        errorMsg.className = "error-message";
-        errorMsg.textContent = "No response from background script. Please check the extension permissions.";
-        document.body.appendChild(errorMsg);
-        return;
-      }
+        if (!response) {
+          console.error("No response from background script");
+          if (loadingIndicator) loadingIndicator.style.display = "none";
+          
+          // Display error message to user
+          const errorMsg = document.createElement("div");
+          errorMsg.className = "error-message";
+          errorMsg.textContent = "No response from background script. Please check the extension permissions.";
+          document.body.appendChild(errorMsg);
+          reject(new Error("No response from background script"));
+          return;
+        }
 
-      if (!response.success) {
-        console.error("Error from background script:", response.error);
+        if (!response.success) {
+          console.error("Error from background script:", response.error);
+          if (loadingIndicator) loadingIndicator.style.display = "none";
+          
+          // Display error message to user
+          const errorMsg = document.createElement("div");
+          errorMsg.className = "error-message";
+          errorMsg.textContent = "Error scanning cookies: " + (response.error || "Unknown error");
+          document.body.appendChild(errorMsg);
+          reject(new Error(response.error || "Unknown error"));
+          return;
+        }
+        
+        console.log("Received cookies:", response.cookies ? response.cookies.length : 0);
+        
+        // Store cookies and update UI
+        siteCookies = response.cookies || [];
+        cookiesByPurpose = response.cookiesByPurpose || {};
+        cookiesByRelationship = response.cookiesByRelationship || {};
+        
+        // Update statistics with comprehensive stats
+        if (response.stats && typeof updateStats === "function") {
+          updateStats(response.stats);
+        }
+        
+        // Render cookies in the UI
+        if (typeof renderCookies === "function") {
+          renderCookies();
+        }
+        
+        // Hide loading indicator
         if (loadingIndicator) loadingIndicator.style.display = "none";
         
-        // Display error message to user
-        const errorMsg = document.createElement("div");
-        errorMsg.className = "error-message";
-        errorMsg.textContent = "Error scanning cookies: " + (response.error || "Unknown error");
-        document.body.appendChild(errorMsg);
-        return;
-      }
-      
-      console.log("Received cookies:", response.cookies ? response.cookies.length : 0);
-      
-      // Store cookies and update UI
-      siteCookies = response.cookies || [];
-      cookiesByPurpose = response.cookiesByPurpose || {};
-      cookiesByRelationship = response.cookiesByRelationship || {};
-      
-      // Update statistics with comprehensive stats
-      if (response.stats && typeof updateStats === "function") {
-        updateStats(response.stats);
-      }
-      
-      // Render cookies in the UI
-      if (typeof renderCookies === "function") {
-        renderCookies();
-      }
-      
-      // Hide loading indicator
-      if (loadingIndicator) loadingIndicator.style.display = "none";
-      
-      // Add expiration warnings if applicable
-      if (typeof addExpirationWarnings === "function") {
-        addExpirationWarnings();
-      }
-      
-      // Set up cookie checkbox functionality
-      if (typeof setupCookieCheckboxes === "function") {
-        setupCookieCheckboxes();
-      }
-      
-      // Add copy buttons to cookie values
-      if (typeof addCopyButtonsToCookieValues === "function") {
-        addCopyButtonsToCookieValues();
-      }
-      
-      // Set up decode buttons for encoded values
-      if (typeof setupDecodeButtons === "function") {
-        setupDecodeButtons();
-      }
+        // Add expiration warnings if applicable
+        if (typeof addExpirationWarnings === "function") {
+          addExpirationWarnings();
+        }
+        
+        // Set up cookie checkbox functionality
+        if (typeof setupCookieCheckboxes === "function") {
+          setupCookieCheckboxes();
+        }
+        
+        // Add copy buttons to cookie values
+        if (typeof addCopyButtonsToCookieValues === "function") {
+          addCopyButtonsToCookieValues();
+        }
+        
+        // Set up decode buttons for encoded values
+        if (typeof setupDecodeButtons === "function") {
+          setupDecodeButtons();
+        }
+        
+        // Resolve the promise with the cookies
+        resolve(siteCookies);
+      });
     });
   });
 }
@@ -2714,26 +2724,390 @@ function renderCharts() {
   // Get chart canvas elements
   const purposeChartCanvas = document.getElementById("purposeChart");
   const relationshipChartCanvas = document.getElementById("relationshipChart");
+  const securityChartCanvas = document.getElementById("securityChart");
+  const sessionChartCanvas = document.getElementById("sessionChart");
+  
+  // Clear existing charts
+  clearExistingCharts();
   
   // Skip if chart canvas elements don't exist
-  if (!purposeChartCanvas || !relationshipChartCanvas) {
+  if (!purposeChartCanvas || !relationshipChartCanvas || !securityChartCanvas || !sessionChartCanvas) {
     console.warn("Chart canvas elements not found");
     return;
   }
   
   // Skip if no cookies available
   if (!siteCookies || siteCookies.length === 0) {
+    displayNoDataMessage();
     console.warn("No cookies available for charts");
     return;
   }
   
-  // Log that we would render charts here
-  console.log("Would render charts with", siteCookies.length, "cookies");
+  console.log("Rendering charts with", siteCookies.length, "cookies");
   
-  // In a real implementation, we would:
-  // 1. Calculate data for charts based on cookies
-  // 2. Create Chart.js instances
-  // 3. Render the charts
+  // Chart colors
+  const chartColors = {
+    necessary: "rgba(25, 135, 84, 0.7)",    // Green
+    preferences: "rgba(13, 110, 253, 0.7)",  // Blue
+    analytics: "rgba(255, 193, 7, 0.7)",     // Yellow
+    marketing: "rgba(220, 53, 69, 0.7)",     // Red
+    social: "rgba(111, 66, 193, 0.7)",       // Purple
+    unknown: "rgba(108, 117, 125, 0.7)",     // Gray
+    
+    primary: "rgba(25, 135, 84, 0.7)",       // Green
+    secondary: "rgba(13, 110, 253, 0.7)",    // Blue
+    thirdParty: "rgba(220, 53, 69, 0.7)",    // Red
+    
+    secure: "rgba(25, 135, 84, 0.7)",        // Green
+    notSecure: "rgba(220, 53, 69, 0.7)",     // Red
+    httpOnly: "rgba(13, 110, 253, 0.7)",     // Blue
+    notHttpOnly: "rgba(255, 193, 7, 0.7)",   // Yellow
+    
+    session: "rgba(13, 110, 253, 0.7)",      // Blue
+    persistent: "rgba(111, 66, 193, 0.7)"    // Purple
+  };
+  
+  // Create Purpose Chart (Pie)
+  createPurposeChart(purposeChartCanvas, chartColors);
+  
+  // Create Relationship Chart (Pie)
+  createRelationshipChart(relationshipChartCanvas, chartColors);
+  
+  // Create Security Chart (Bar)
+  createSecurityChart(securityChartCanvas, chartColors);
+  
+  // Create Session vs Persistent Chart (Pie)
+  createSessionChart(sessionChartCanvas, chartColors);
+}
+
+// Helper function to clear existing charts
+function clearExistingCharts() {
+  // Get all chart canvases
+  const chartCanvases = document.querySelectorAll(".chart-wrapper canvas");
+  
+  // Destroy existing Chart instances to prevent memory leaks
+  chartCanvases.forEach(canvas => {
+    const chartInstance = Chart.getChart(canvas);
+    if (chartInstance) {
+      chartInstance.destroy();
+    }
+  });
+}
+
+// Helper function to display no data message
+function displayNoDataMessage() {
+  const chartSections = document.querySelectorAll(".chart-section");
+  
+  chartSections.forEach(section => {
+    const canvas = section.querySelector("canvas");
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = "14px Arial";
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-color');
+      ctx.textAlign = "center";
+      ctx.fillText("No cookie data available", canvas.width / 2, canvas.height / 2);
+    }
+  });
+}
+
+// Helper function to create the Purpose Chart
+function createPurposeChart(canvas, colors) {
+  // Count cookies by purpose
+  const purposeCounts = {
+    necessary: 0,
+    preferences: 0,
+    analytics: 0,
+    marketing: 0,
+    social: 0,
+    unknown: 0
+  };
+  
+  siteCookies.forEach(cookie => {
+    const purpose = cookie.purposeCategory || "unknown";
+    if (purposeCounts.hasOwnProperty(purpose)) {
+      purposeCounts[purpose]++;
+    } else {
+      purposeCounts.unknown++;
+    }
+  });
+  
+  // Create dataset
+  const data = {
+    labels: [
+      "Necessary", 
+      "Preferences", 
+      "Analytics", 
+      "Marketing", 
+      "Social", 
+      "Unknown"
+    ],
+    datasets: [{
+      data: [
+        purposeCounts.necessary,
+        purposeCounts.preferences,
+        purposeCounts.analytics,
+        purposeCounts.marketing,
+        purposeCounts.social,
+        purposeCounts.unknown
+      ],
+      backgroundColor: [
+        colors.necessary,
+        colors.preferences,
+        colors.analytics,
+        colors.marketing,
+        colors.social,
+        colors.unknown
+      ],
+      borderWidth: 1
+    }]
+  };
+  
+  // Remove categories with zero cookies
+  const filteredLabels = [];
+  const filteredData = [];
+  const filteredColors = [];
+  
+  for (let i = 0; i < data.labels.length; i++) {
+    if (data.datasets[0].data[i] > 0) {
+      filteredLabels.push(data.labels[i]);
+      filteredData.push(data.datasets[0].data[i]);
+      filteredColors.push(data.datasets[0].backgroundColor[i]);
+    }
+  }
+  
+  // Update dataset with filtered data
+  data.labels = filteredLabels;
+  data.datasets[0].data = filteredData;
+  data.datasets[0].backgroundColor = filteredColors;
+  
+  // Create chart
+  new Chart(canvas, {
+    type: 'pie',
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label;
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = Math.round((value / total) * 100);
+              return `${label}: ${value} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// Helper function to create the Relationship Chart
+function createRelationshipChart(canvas, colors) {
+  // Count cookies by relationship
+  const relationshipCounts = {
+    primary: 0,
+    secondary: 0,
+    thirdParty: 0
+  };
+  
+  siteCookies.forEach(cookie => {
+    const relationship = cookie.relationshipCategory || "thirdParty";
+    if (relationshipCounts.hasOwnProperty(relationship)) {
+      relationshipCounts[relationship]++;
+    } else {
+      relationshipCounts.thirdParty++;
+    }
+  });
+  
+  // Create dataset
+  const data = {
+    labels: [
+      "Primary Domain", 
+      "Secondary (Subdomain)", 
+      "Third Party"
+    ],
+    datasets: [{
+      data: [
+        relationshipCounts.primary,
+        relationshipCounts.secondary,
+        relationshipCounts.thirdParty
+      ],
+      backgroundColor: [
+        colors.primary,
+        colors.secondary,
+        colors.thirdParty
+      ],
+      borderWidth: 1
+    }]
+  };
+  
+  // Create chart
+  new Chart(canvas, {
+    type: 'doughnut',
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label;
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = Math.round((value / total) * 100);
+              return `${label}: ${value} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// Helper function to create the Security Chart
+function createSecurityChart(canvas, colors) {
+  // Count security attributes
+  let secureCount = 0;
+  let notSecureCount = 0;
+  let httpOnlyCount = 0;
+  let notHttpOnlyCount = 0;
+  
+  siteCookies.forEach(cookie => {
+    if (cookie.secure) {
+      secureCount++;
+    } else {
+      notSecureCount++;
+    }
+    
+    if (cookie.httpOnly) {
+      httpOnlyCount++;
+    } else {
+      notHttpOnlyCount++;
+    }
+  });
+  
+  // Create dataset
+  const data = {
+    labels: ['Secure', 'Not Secure', 'HttpOnly', 'Not HttpOnly'],
+    datasets: [{
+      data: [secureCount, notSecureCount, httpOnlyCount, notHttpOnlyCount],
+      backgroundColor: [
+        colors.secure,
+        colors.notSecure,
+        colors.httpOnly,
+        colors.notHttpOnly
+      ],
+      borderWidth: 1
+    }]
+  };
+  
+  // Create chart
+  new Chart(canvas, {
+    type: 'bar',
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+          },
+          grid: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--border-color')
+          }
+        },
+        x: {
+          ticks: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+          },
+          grid: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--border-color')
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: false
+        }
+      }
+    }
+  });
+}
+
+// Helper function to create the Session vs Persistent Chart
+function createSessionChart(canvas, colors) {
+  // Count session vs persistent cookies
+  let sessionCount = 0;
+  let persistentCount = 0;
+  
+  siteCookies.forEach(cookie => {
+    if (cookie.expirationDate) {
+      persistentCount++;
+    } else {
+      sessionCount++;
+    }
+  });
+  
+  // Create dataset
+  const data = {
+    labels: ['Session Cookies', 'Persistent Cookies'],
+    datasets: [{
+      data: [sessionCount, persistentCount],
+      backgroundColor: [
+        colors.session,
+        colors.persistent
+      ],
+      borderWidth: 1
+    }]
+  };
+  
+  // Create chart
+  new Chart(canvas, {
+    type: 'pie',
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label;
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = Math.round((value / total) * 100);
+              return `${label}: ${value} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 // Update the document.addEventListener("DOMContentLoaded") section to ensure it calls loadCookies
@@ -3100,7 +3474,20 @@ function showTab(tabId) {
   
   // Perform tab-specific actions
   if (tabId === "chartsTab") {
-    renderCharts();
+    console.log("Charts tab selected, rendering charts...");
+    // Make sure siteCookies is available 
+    if (!siteCookies || siteCookies.length === 0) {
+      // If we don't have cookies yet, scan them first then render charts
+      scanCurrentSiteCookies().then(() => {
+        setTimeout(renderCharts, 500); // Short delay to ensure data is processed
+      }).catch(error => {
+        console.error("Error loading cookies for charts:", error);
+        displayNoDataMessage();
+      });
+    } else {
+      // We have cookies, render charts directly
+      renderCharts();
+    }
   } else if (tabId === "logsTab") {
     // Refresh logs when tab is shown
     document.getElementById("refreshLogsBtn")?.click();
