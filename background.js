@@ -179,6 +179,413 @@ const Logger = {
 // Initialize the logger
 Logger.init();
 
+// Cookie Change Monitor
+// Tracks cookie changes and provides notifications for monitored domains
+const CookieMonitor = {
+  // Storage keys
+  STORAGE_KEYS: {
+    MONITORING_ENABLED: 'cookie_monitoring_enabled',
+    MONITORED_DOMAINS: 'cookie_monitored_domains',
+    COOKIE_HISTORY: 'cookie_history',
+    NOTIFICATION_SETTINGS: 'cookie_notification_settings',
+  },
+  
+  // Default settings
+  DEFAULT_SETTINGS: {
+    enabled: false,
+    notifyOnAdd: true,
+    notifyOnModify: true,
+    notifyOnRemove: true,
+    maxHistoryPerDomain: 100,
+    maxDomainsToMonitor: 20
+  },
+  
+  // Current settings
+  settings: {},
+  
+  // Domains being monitored
+  monitoredDomains: [],
+  
+  // Cookie history storage (keyed by domain)
+  cookieHistory: {},
+  
+  // Initialize the cookie monitor
+  init: function() {
+    Logger.info('Initializing Cookie Monitor');
+    this.loadSettings();
+    
+    // Set up event listeners for cookie changes
+    chrome.cookies.onChanged.addListener(this.handleCookieChange.bind(this));
+    
+    // Listen for messages from the popup
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === 'getCookieMonitorStatus') {
+        sendResponse({
+          success: true,
+          enabled: this.settings.enabled,
+          monitoredDomains: this.monitoredDomains,
+          settings: this.settings
+        });
+        return true;
+      }
+      
+      if (message.action === 'toggleCookieMonitoring') {
+        this.toggleMonitoring(message.enabled);
+        sendResponse({ success: true, enabled: this.settings.enabled });
+        return true;
+      }
+      
+      if (message.action === 'addDomainToMonitor') {
+        this.addDomainToMonitor(message.domain);
+        sendResponse({ 
+          success: true, 
+          monitoredDomains: this.monitoredDomains
+        });
+        return true;
+      }
+      
+      if (message.action === 'removeDomainFromMonitor') {
+        this.removeDomainFromMonitor(message.domain);
+        sendResponse({ 
+          success: true, 
+          monitoredDomains: this.monitoredDomains 
+        });
+        return true;
+      }
+      
+      if (message.action === 'getCookieHistory') {
+        sendResponse({
+          success: true,
+          history: this.getCookieHistory(message.domain)
+        });
+        return true;
+      }
+      
+      if (message.action === 'updateMonitorSettings') {
+        this.updateSettings(message.settings);
+        sendResponse({ success: true, settings: this.settings });
+        return true;
+      }
+      
+      if (message.action === 'clearCookieHistory') {
+        this.clearCookieHistory(message.domain);
+        sendResponse({ success: true });
+        return true;
+      }
+    });
+  },
+  
+  // Load settings from storage
+  loadSettings: function() {
+    chrome.storage.local.get([
+      this.STORAGE_KEYS.MONITORING_ENABLED,
+      this.STORAGE_KEYS.MONITORED_DOMAINS,
+      this.STORAGE_KEYS.COOKIE_HISTORY,
+      this.STORAGE_KEYS.NOTIFICATION_SETTINGS
+    ], (result) => {
+      // Set default settings if none exist
+      this.settings = Object.assign({}, this.DEFAULT_SETTINGS);
+      
+      // Override with stored settings if they exist
+      if (result[this.STORAGE_KEYS.NOTIFICATION_SETTINGS]) {
+        this.settings = Object.assign(
+          this.settings, 
+          result[this.STORAGE_KEYS.NOTIFICATION_SETTINGS]
+        );
+      }
+      
+      // Set enabled state
+      this.settings.enabled = 
+        result[this.STORAGE_KEYS.MONITORING_ENABLED] !== undefined 
+          ? result[this.STORAGE_KEYS.MONITORING_ENABLED] 
+          : this.settings.enabled;
+      
+      // Set monitored domains
+      this.monitoredDomains = result[this.STORAGE_KEYS.MONITORED_DOMAINS] || [];
+      
+      // Set cookie history
+      this.cookieHistory = result[this.STORAGE_KEYS.COOKIE_HISTORY] || {};
+      
+      Logger.info('Cookie Monitor settings loaded:', this.settings);
+      Logger.info('Monitored domains:', this.monitoredDomains.length);
+    });
+  },
+  
+  // Save settings to storage
+  saveSettings: function() {
+    const dataToSave = {
+      [this.STORAGE_KEYS.MONITORING_ENABLED]: this.settings.enabled,
+      [this.STORAGE_KEYS.MONITORED_DOMAINS]: this.monitoredDomains,
+      [this.STORAGE_KEYS.NOTIFICATION_SETTINGS]: this.settings
+    };
+    
+    chrome.storage.local.set(dataToSave, () => {
+      Logger.info('Cookie Monitor settings saved');
+    });
+  },
+  
+  // Save cookie history to storage
+  saveCookieHistory: function() {
+    chrome.storage.local.set({
+      [this.STORAGE_KEYS.COOKIE_HISTORY]: this.cookieHistory
+    }, () => {
+      Logger.debug('Cookie history saved');
+    });
+  },
+  
+  // Toggle cookie monitoring on/off
+  toggleMonitoring: function(enabled) {
+    this.settings.enabled = enabled !== undefined ? enabled : !this.settings.enabled;
+    this.saveSettings();
+    Logger.info('Cookie monitoring ' + (this.settings.enabled ? 'enabled' : 'disabled'));
+    
+    // Notify the popup if it's open
+    chrome.runtime.sendMessage({
+      action: 'cookieMonitoringToggled',
+      enabled: this.settings.enabled
+    }).catch(() => {
+      // Ignore errors if popup is not open
+    });
+  },
+  
+  // Update monitoring settings
+  updateSettings: function(newSettings) {
+    this.settings = Object.assign(this.settings, newSettings);
+    this.saveSettings();
+    Logger.info('Cookie Monitor settings updated:', this.settings);
+  },
+  
+  // Add a domain to monitor
+  addDomainToMonitor: function(domain) {
+    if (!domain) return false;
+    
+    // Get base domain
+    const baseDomain = getBaseDomain(domain);
+    
+    // Check if domain is already being monitored
+    if (this.monitoredDomains.includes(baseDomain)) {
+      Logger.info('Domain already being monitored:', baseDomain);
+      return false;
+    }
+    
+    // Check if we've reached the maximum number of domains to monitor
+    if (this.monitoredDomains.length >= this.settings.maxDomainsToMonitor) {
+      Logger.warn('Maximum number of monitored domains reached');
+      return false;
+    }
+    
+    // Add domain to monitored list
+    this.monitoredDomains.push(baseDomain);
+    
+    // Initialize history for this domain if it doesn't exist
+    if (!this.cookieHistory[baseDomain]) {
+      this.cookieHistory[baseDomain] = [];
+    }
+    
+    // Take a snapshot of current cookies for this domain
+    this.takeSnapshot(baseDomain);
+    
+    // Save changes
+    this.saveSettings();
+    
+    Logger.info('Domain added to monitoring:', baseDomain);
+    return true;
+  },
+  
+  // Remove a domain from monitoring
+  removeDomainFromMonitor: function(domain) {
+    if (!domain) return false;
+    
+    const baseDomain = getBaseDomain(domain);
+    const index = this.monitoredDomains.indexOf(baseDomain);
+    
+    if (index === -1) {
+      Logger.info('Domain not being monitored:', baseDomain);
+      return false;
+    }
+    
+    // Remove domain from monitored list
+    this.monitoredDomains.splice(index, 1);
+    
+    // Save changes
+    this.saveSettings();
+    
+    Logger.info('Domain removed from monitoring:', baseDomain);
+    return true;
+  },
+  
+  // Take a snapshot of current cookies for a domain
+  takeSnapshot: async function(domain) {
+    try {
+      if (!domain) return;
+      
+      const cookies = await getAllCookies({ domain });
+      
+      // Store initial state without generating events
+      cookies.forEach(cookie => {
+        this.storeCookieState(cookie, 'initial', false);
+      });
+      
+      Logger.info('Took snapshot of', cookies.length, 'cookies for', domain);
+    } catch (error) {
+      Logger.error('Error taking cookie snapshot:', error);
+    }
+  },
+  
+  // Handle cookie change events
+  handleCookieChange: function(changeInfo) {
+    // Skip if monitoring is disabled
+    if (!this.settings.enabled) return;
+    
+    const { cookie, removed, cause } = changeInfo;
+    
+    // Get base domain of the cookie
+    const domain = cookie.domain.startsWith('.') 
+      ? cookie.domain.substring(1) 
+      : cookie.domain;
+    
+    const baseDomain = getBaseDomain(domain);
+    
+    // Check if this domain is being monitored
+    if (!this.monitoredDomains.includes(baseDomain)) {
+      return;
+    }
+    
+    // Determine the change type
+    let changeType;
+    if (removed) {
+      changeType = 'removed';
+    } else if (cause === 'explicit' || cause === 'overwrite') {
+      // Check if this is a new cookie or a modification
+      const existingCookies = this.cookieHistory[baseDomain] || [];
+      const existingCookie = existingCookies.find(c => 
+        c.cookie.name === cookie.name && 
+        c.cookie.path === cookie.path &&
+        c.cookie.domain === cookie.domain &&
+        c.changeType !== 'removed'
+      );
+      
+      changeType = existingCookie ? 'modified' : 'added';
+    } else {
+      // Other causes like 'expired', 'evicted', etc.
+      changeType = cause;
+    }
+    
+    // Store the cookie state change
+    this.storeCookieState(cookie, changeType);
+    
+    // Notify if appropriate
+    if ((changeType === 'added' && this.settings.notifyOnAdd) ||
+        (changeType === 'modified' && this.settings.notifyOnModify) ||
+        (changeType === 'removed' && this.settings.notifyOnRemove)) {
+      this.notifyCookieChange(cookie, changeType, baseDomain);
+    }
+    
+    Logger.info('Cookie change detected:', cookie.name, changeType, 'on', baseDomain);
+  },
+  
+  // Store cookie state change in history
+  storeCookieState: function(cookie, changeType, shouldNotify = true) {
+    const domain = cookie.domain.startsWith('.') 
+      ? cookie.domain.substring(1) 
+      : cookie.domain;
+    
+    const baseDomain = getBaseDomain(domain);
+    
+    // Initialize history for this domain if it doesn't exist
+    if (!this.cookieHistory[baseDomain]) {
+      this.cookieHistory[baseDomain] = [];
+    }
+    
+    // Add the cookie change to history
+    this.cookieHistory[baseDomain].unshift({
+      timestamp: Date.now(),
+      changeType,
+      cookie: { ...cookie },
+      shouldNotify
+    });
+    
+    // Trim history if it exceeds the maximum
+    if (this.cookieHistory[baseDomain].length > this.settings.maxHistoryPerDomain) {
+      this.cookieHistory[baseDomain] = 
+        this.cookieHistory[baseDomain].slice(0, this.settings.maxHistoryPerDomain);
+    }
+    
+    // Save history to storage
+    this.saveCookieHistory();
+    
+    // Notify popup if it's open
+    if (shouldNotify) {
+      chrome.runtime.sendMessage({
+        action: 'cookieHistoryUpdated',
+        domain: baseDomain,
+        history: this.cookieHistory[baseDomain]
+      }).catch(() => {
+        // Ignore errors if popup is not open
+      });
+    }
+  },
+  
+  // Notify the user about a cookie change
+  notifyCookieChange: function(cookie, changeType, domain) {
+    let title, message;
+    
+    switch (changeType) {
+      case 'added':
+        title = 'Cookie Added';
+        message = `New cookie "${cookie.name}" added on ${domain}`;
+        break;
+      case 'modified':
+        title = 'Cookie Modified';
+        message = `Cookie "${cookie.name}" modified on ${domain}`;
+        break;
+      case 'removed':
+        title = 'Cookie Removed';
+        message = `Cookie "${cookie.name}" removed from ${domain}`;
+        break;
+      default:
+        title = 'Cookie Changed';
+        message = `Cookie "${cookie.name}" change (${changeType}) on ${domain}`;
+    }
+    
+    // Create a notification
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: '/icons/48.png',
+      title,
+      message,
+      contextMessage: 'Cookie Organizer'
+    });
+  },
+  
+  // Get cookie history for a domain
+  getCookieHistory: function(domain) {
+    if (!domain) return [];
+    
+    const baseDomain = getBaseDomain(domain);
+    return this.cookieHistory[baseDomain] || [];
+  },
+  
+  // Clear cookie history for a domain
+  clearCookieHistory: function(domain) {
+    if (!domain) {
+      // Clear all history
+      this.cookieHistory = {};
+    } else {
+      // Clear history for specific domain
+      const baseDomain = getBaseDomain(domain);
+      delete this.cookieHistory[baseDomain];
+    }
+    
+    // Save changes
+    this.saveCookieHistory();
+    Logger.info('Cookie history cleared for:', domain || 'all domains');
+  }
+};
+
+// Initialize the Cookie Monitor
+CookieMonitor.init();
+
 // Get base domain from a URL or domain string
 function getBaseDomain(urlOrDomain) {
   let hostname;

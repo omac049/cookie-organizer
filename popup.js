@@ -3025,4 +3025,463 @@ function showTab(tabId) {
   renderCookies(document.getElementById("searchBox")?.value || "");
 }
 
+/****************************/
+/* Cookie Monitoring Feature */
+/****************************/
+
+// Initialize monitoring tab functionality
+function initMonitoringTab() {
+  // DOM elements
+  const enableMonitoringToggle = document.getElementById("enableMonitoring");
+  const domainToMonitorInput = document.getElementById("domainToMonitor");
+  const addDomainBtn = document.getElementById("addDomainBtn");
+  const monitorCurrentSiteBtn = document.getElementById("monitorCurrentSite");
+  const domainsList = document.getElementById("domainsList");
+  const noDomains = document.getElementById("noDomains");
+  const historyDomainSelect = document.getElementById("historyDomainSelect");
+  const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+  const historyTableBody = document.getElementById("historyTableBody");
+  const noHistory = document.getElementById("noHistory");
+  const historyContainer = document.getElementById("historyContainer");
+  
+  const notifyOnAdd = document.getElementById("notifyOnAdd");
+  const notifyOnModify = document.getElementById("notifyOnModify");
+  const notifyOnRemove = document.getElementById("notifyOnRemove");
+  
+  // Current state
+  let monitoredDomains = [];
+  let monitoringEnabled = false;
+  let currentSiteBaseDomain = "";
+  
+  // Get current site domain
+  function getCurrentSiteDomain() {
+    if (siteUrl) {
+      try {
+        const url = new URL(siteUrl);
+        const hostname = url.hostname;
+        // Extract base domain (remove www. if present)
+        currentSiteBaseDomain = hostname.replace(/^www\./, "");
+        return currentSiteBaseDomain;
+      } catch (e) {
+        console.error("Error parsing URL:", e);
+        return "";
+      }
+    }
+    return "";
+  }
+  
+  // Initialize monitoring settings
+  function initMonitoring() {
+    // Get the current site domain
+    getCurrentSiteDomain();
+    
+    // Get monitoring status from background script
+    chrome.runtime.sendMessage({
+      action: "getCookieMonitorStatus"
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error getting monitoring status:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Invalid response from background script");
+        return;
+      }
+      
+      // Update UI with current status
+      monitoringEnabled = response.enabled;
+      enableMonitoringToggle.checked = monitoringEnabled;
+      
+      // Update notification settings
+      notifyOnAdd.checked = response.settings.notifyOnAdd;
+      notifyOnModify.checked = response.settings.notifyOnModify;
+      notifyOnRemove.checked = response.settings.notifyOnRemove;
+      
+      // Update domains list
+      monitoredDomains = response.monitoredDomains || [];
+      updateDomainsList();
+      updateHistoryDomainSelect();
+      
+      // Load history for the first domain if available
+      if (monitoredDomains.length > 0) {
+        loadCookieHistory(monitoredDomains[0]);
+      }
+    });
+  }
+  
+  // Update the list of monitored domains
+  function updateDomainsList() {
+    // Clear the list
+    domainsList.innerHTML = "";
+    
+    // Show/hide empty state
+    if (monitoredDomains.length === 0) {
+      noDomains.style.display = "block";
+      domainsList.style.display = "none";
+      return;
+    }
+    
+    noDomains.style.display = "none";
+    domainsList.style.display = "block";
+    
+    // Add each domain to the list
+    monitoredDomains.forEach(domain => {
+      const listItem = document.createElement("li");
+      listItem.className = "domain-item";
+      
+      const domainName = document.createElement("div");
+      domainName.className = "domain-name";
+      domainName.textContent = domain;
+      
+      const domainActions = document.createElement("div");
+      domainActions.className = "domain-actions";
+      
+      const viewHistoryBtn = document.createElement("button");
+      viewHistoryBtn.className = "btn-secondary";
+      viewHistoryBtn.textContent = "View History";
+      viewHistoryBtn.addEventListener("click", () => {
+        historyDomainSelect.value = domain;
+        loadCookieHistory(domain);
+      });
+      
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "btn-danger";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => {
+        removeDomainFromMonitoring(domain);
+      });
+      
+      domainActions.appendChild(viewHistoryBtn);
+      domainActions.appendChild(removeBtn);
+      
+      listItem.appendChild(domainName);
+      listItem.appendChild(domainActions);
+      
+      domainsList.appendChild(listItem);
+    });
+  }
+  
+  // Update the domain select dropdown for history
+  function updateHistoryDomainSelect() {
+    // Clear the dropdown except for the default option
+    while (historyDomainSelect.options.length > 1) {
+      historyDomainSelect.remove(1);
+    }
+    
+    // Add each domain to the dropdown
+    monitoredDomains.forEach(domain => {
+      const option = document.createElement("option");
+      option.value = domain;
+      option.textContent = domain;
+      historyDomainSelect.appendChild(option);
+    });
+  }
+  
+  // Add a domain to monitoring
+  function addDomainToMonitoring(domain) {
+    if (!domain) {
+      console.error("No domain specified");
+      return;
+    }
+    
+    // Send request to background script
+    chrome.runtime.sendMessage({
+      action: "addDomainToMonitor",
+      domain: domain
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error adding domain to monitoring:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Failed to add domain to monitoring");
+        return;
+      }
+      
+      // Update domains list
+      monitoredDomains = response.monitoredDomains;
+      updateDomainsList();
+      updateHistoryDomainSelect();
+      
+      // Clear the input
+      domainToMonitorInput.value = "";
+      
+      // Load history for this domain
+      loadCookieHistory(domain);
+    });
+  }
+  
+  // Remove a domain from monitoring
+  function removeDomainFromMonitoring(domain) {
+    // Send request to background script
+    chrome.runtime.sendMessage({
+      action: "removeDomainFromMonitor",
+      domain: domain
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error removing domain from monitoring:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Failed to remove domain from monitoring");
+        return;
+      }
+      
+      // Update domains list
+      monitoredDomains = response.monitoredDomains;
+      updateDomainsList();
+      updateHistoryDomainSelect();
+      
+      // If this was the selected domain, clear history view
+      if (historyDomainSelect.value === domain) {
+        historyDomainSelect.value = "";
+        clearHistoryTable();
+      }
+    });
+  }
+  
+  // Load cookie history for a domain
+  function loadCookieHistory(domain) {
+    if (!domain) {
+      clearHistoryTable();
+      return;
+    }
+    
+    // Send request to background script
+    chrome.runtime.sendMessage({
+      action: "getCookieHistory",
+      domain: domain
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error getting cookie history:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Failed to get cookie history");
+        return;
+      }
+      
+      // Update history table
+      updateHistoryTable(response.history);
+    });
+  }
+  
+  // Clear the history table
+  function clearHistoryTable() {
+    historyTableBody.innerHTML = "";
+    historyContainer.style.display = "none";
+    noHistory.style.display = "block";
+  }
+  
+  // Update the history table with data
+  function updateHistoryTable(history) {
+    // Clear the table
+    historyTableBody.innerHTML = "";
+    
+    // Show/hide empty state
+    if (!history || history.length === 0) {
+      historyContainer.style.display = "none";
+      noHistory.style.display = "block";
+      return;
+    }
+    
+    historyContainer.style.display = "block";
+    noHistory.style.display = "none";
+    
+    // Add each history entry to the table
+    history.forEach(entry => {
+      const row = document.createElement("tr");
+      
+      // Time column
+      const timeCell = document.createElement("td");
+      const date = new Date(entry.timestamp);
+      timeCell.textContent = date.toLocaleTimeString();
+      timeCell.title = date.toLocaleString();
+      
+      // Cookie name column
+      const cookieCell = document.createElement("td");
+      cookieCell.textContent = entry.cookie.name;
+      cookieCell.title = `Path: ${entry.cookie.path}`;
+      
+      // Change type column
+      const changeCell = document.createElement("td");
+      changeCell.textContent = entry.changeType;
+      changeCell.className = `change-${entry.changeType}`;
+      
+      // Details column
+      const detailsCell = document.createElement("td");
+      if (entry.changeType === 'added' || entry.changeType === 'modified') {
+        const value = entry.cookie.value;
+        // Truncate the value if it's too long
+        detailsCell.textContent = value.length > 20 
+          ? value.substring(0, 20) + "..." 
+          : value;
+        detailsCell.title = value;
+      } else if (entry.changeType === 'removed') {
+        detailsCell.textContent = "Cookie removed";
+      } else if (entry.changeType === 'expired') {
+        detailsCell.textContent = "Cookie expired";
+      } else if (entry.changeType === 'initial') {
+        detailsCell.textContent = "Initial snapshot";
+      } else {
+        detailsCell.textContent = entry.changeType;
+      }
+      
+      // Add cells to row
+      row.appendChild(timeCell);
+      row.appendChild(cookieCell);
+      row.appendChild(changeCell);
+      row.appendChild(detailsCell);
+      
+      // Add row to table
+      historyTableBody.appendChild(row);
+    });
+  }
+  
+  // Update monitoring settings
+  function updateMonitorSettings() {
+    const settings = {
+      notifyOnAdd: notifyOnAdd.checked,
+      notifyOnModify: notifyOnModify.checked,
+      notifyOnRemove: notifyOnRemove.checked
+    };
+    
+    // Send settings to background script
+    chrome.runtime.sendMessage({
+      action: "updateMonitorSettings",
+      settings: settings
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error updating monitoring settings:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Failed to update monitoring settings");
+        return;
+      }
+      
+      console.log("Monitoring settings updated");
+    });
+  }
+  
+  // Toggle cookie monitoring
+  function toggleMonitoring() {
+    const enabled = enableMonitoringToggle.checked;
+    
+    // Send request to background script
+    chrome.runtime.sendMessage({
+      action: "toggleCookieMonitoring",
+      enabled: enabled
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error toggling monitoring:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Failed to toggle monitoring");
+        return;
+      }
+      
+      monitoringEnabled = response.enabled;
+      enableMonitoringToggle.checked = monitoringEnabled;
+    });
+  }
+  
+  // Clear cookie history for a domain
+  function clearCookieHistory() {
+    const domain = historyDomainSelect.value;
+    
+    // Send request to background script
+    chrome.runtime.sendMessage({
+      action: "clearCookieHistory",
+      domain: domain
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error clearing history:", chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!response || !response.success) {
+        console.error("Failed to clear history");
+        return;
+      }
+      
+      // Clear history table
+      clearHistoryTable();
+    });
+  }
+  
+  // Event listeners
+  enableMonitoringToggle.addEventListener("change", toggleMonitoring);
+  
+  addDomainBtn.addEventListener("click", () => {
+    addDomainToMonitoring(domainToMonitorInput.value.trim());
+  });
+  
+  monitorCurrentSiteBtn.addEventListener("click", () => {
+    const currentDomain = getCurrentSiteDomain();
+    if (currentDomain) {
+      addDomainToMonitoring(currentDomain);
+    }
+  });
+  
+  domainToMonitorInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      addDomainToMonitoring(domainToMonitorInput.value.trim());
+    }
+  });
+  
+  historyDomainSelect.addEventListener("change", () => {
+    loadCookieHistory(historyDomainSelect.value);
+  });
+  
+  clearHistoryBtn.addEventListener("click", clearCookieHistory);
+  
+  notifyOnAdd.addEventListener("change", updateMonitorSettings);
+  notifyOnModify.addEventListener("change", updateMonitorSettings);
+  notifyOnRemove.addEventListener("change", updateMonitorSettings);
+  
+  // Listen for cookie history updates from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "cookieHistoryUpdated") {
+      // If this is the current selected domain, update the history table
+      if (historyDomainSelect.value === message.domain) {
+        updateHistoryTable(message.history);
+      }
+    } else if (message.action === "cookieMonitoringToggled") {
+      monitoringEnabled = message.enabled;
+      enableMonitoringToggle.checked = monitoringEnabled;
+    }
+  });
+  
+  // Initialize
+  initMonitoring();
+}
+
+// Initialize the app when the DOM is loaded
+document.addEventListener("DOMContentLoaded", function() {
+  try {
+    // Initialize all modules
+    scanCurrentSiteCookies();
+    initializeTabs();
+    setupCategoryToggles();
+    initializeTheme();
+    initMonitoringTab(); // Initialize the new monitoring tab
+  } catch (e) {
+    console.error("Error initializing extension:", e);
+    
+    // Display error to user
+    const errorMsg = document.createElement("div");
+    errorMsg.className = "error-message";
+    errorMsg.textContent = "Error initializing extension: " + e.message;
+    document.body.appendChild(errorMsg);
+  }
+});
+
 

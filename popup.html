@@ -1540,6 +1540,220 @@
       word-break: break-all;
       white-space: pre-wrap;
     }
+    
+    /* Cookie Value Area */
+    .cookie-value-area {
+      background: var(--cookie-value-bg);
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      max-height: 100px;
+      overflow-y: auto;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-top: 12px;
+      position: relative;
+    }
+    
+    /* Monitoring Tab Styles */
+    .monitoring-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .toggle-container {
+      display: flex;
+      align-items: center;
+    }
+    
+    .toggle-container label {
+      margin-right: 10px;
+    }
+    
+    /* Switch toggle */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+    
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+    }
+    
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+    }
+    
+    input:checked + .slider {
+      background-color: var(--primary-btn);
+    }
+    
+    input:focus + .slider {
+      box-shadow: 0 0 1px var(--primary-btn);
+    }
+    
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+    
+    .slider.round {
+      border-radius: 34px;
+    }
+    
+    .slider.round:before {
+      border-radius: 50%;
+    }
+    
+    .monitoring-controls {
+      margin-bottom: 20px;
+    }
+    
+    .add-domain-container {
+      display: flex;
+      margin-bottom: 15px;
+    }
+    
+    .add-domain-container input {
+      flex-grow: 1;
+      padding: 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      margin-right: 10px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+    }
+    
+    .monitoring-settings {
+      background-color: var(--stats-bg);
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+    
+    .setting-group {
+      margin-bottom: 10px;
+    }
+    
+    .setting-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .monitored-domains, .cookie-history {
+      margin-bottom: 20px;
+    }
+    
+    .domains-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    
+    .domain-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .domain-item:last-child {
+      border-bottom: none;
+    }
+    
+    .domain-name {
+      font-weight: bold;
+    }
+    
+    .domain-actions {
+      display: flex;
+      gap: 5px;
+    }
+    
+    .history-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .history-controls select {
+      flex-grow: 1;
+      padding: 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+    }
+    
+    .history-container {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .history-table th,
+    .history-table td {
+      padding: 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .history-table th {
+      background-color: var(--header-bg);
+      position: sticky;
+      top: 0;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-color);
+      opacity: 0.7;
+    }
+    
+    .change-added {
+      color: #4caf50;
+    }
+    
+    .change-modified {
+      color: #ff9800;
+    }
+    
+    .change-removed {
+      color: #f44336;
+    }
+    
+    .change-expired {
+      color: #607d8b;
+    }
   </style>
 </head>
 <body>
@@ -1619,12 +1833,13 @@
   
   <div class="tabs">
     <div class="tab-header">
-      <div class="category-tab active" data-tab="byPurposeTab">By Purpose</div>
-      <div class="category-tab" data-tab="byRelationshipTab">By Domain</div>
-      <div class="category-tab" data-tab="allCookiesTab">All Cookies</div>
-      <div class="category-tab" data-tab="compareTab">Compare</div>
-      <div class="category-tab" data-tab="chartsTab">Charts</div>
-      <div class="category-tab" data-tab="logsTab">Logs</div>
+      <div class="tab" data-tab="byPurposeTab">By Purpose</div>
+      <div class="tab" data-tab="byRelationshipTab">By Relationship</div>
+      <div class="tab" data-tab="allCookiesTab">All Cookies</div>
+      <div class="tab" data-tab="compareTab">Compare</div>
+      <div class="tab" data-tab="chartsTab">Charts</div>
+      <div class="tab" data-tab="logsTab">Logs</div>
+      <div class="tab" data-tab="monitoringTab">Monitoring</div>
     </div>
     
     <!-- Add search box and filter toggle -->
@@ -1799,6 +2014,86 @@
                 <td colspan="3" class="no-logs-message">Loading logs...</td>
               </tr>
             </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Monitoring Tab -->
+    <div class="tab-content" id="monitoringTab">
+      <div class="monitoring-header">
+        <h2>Cookie Monitoring</h2>
+        <div class="toggle-container">
+          <label for="enableMonitoring">Enable Monitoring:</label>
+          <label class="switch">
+            <input type="checkbox" id="enableMonitoring">
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="monitoring-controls">
+        <div class="add-domain-container">
+          <input type="text" id="domainToMonitor" placeholder="Enter domain to monitor">
+          <button id="addDomainBtn" class="btn-primary">Add Domain</button>
+        </div>
+        
+        <div class="monitoring-settings">
+          <h3>Notification Settings</h3>
+          <div class="setting-group">
+            <label>
+              <input type="checkbox" id="notifyOnAdd" checked>
+              Notify when cookies are added
+            </label>
+          </div>
+          <div class="setting-group">
+            <label>
+              <input type="checkbox" id="notifyOnModify" checked>
+              Notify when cookies are modified
+            </label>
+          </div>
+          <div class="setting-group">
+            <label>
+              <input type="checkbox" id="notifyOnRemove" checked>
+              Notify when cookies are removed
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <div class="monitored-domains">
+        <h3>Monitored Domains</h3>
+        <div id="noDomains" class="empty-state">
+          <p>No domains are currently being monitored</p>
+          <p>Add a domain from the current site or enter one above</p>
+          <button id="monitorCurrentSite" class="btn-secondary">Monitor Current Site</button>
+        </div>
+        <ul id="domainsList" class="domains-list"></ul>
+      </div>
+      
+      <div class="cookie-history">
+        <h3>Cookie Change History</h3>
+        <div class="history-controls">
+          <select id="historyDomainSelect">
+            <option value="">Select domain to view history</option>
+          </select>
+          <button id="clearHistoryBtn" class="btn-danger">Clear History</button>
+        </div>
+        <div id="noHistory" class="empty-state">
+          <p>No cookie history available</p>
+          <p>Select a domain or wait for cookie changes</p>
+        </div>
+        <div id="historyContainer" class="history-container">
+          <table id="historyTable" class="history-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Cookie</th>
+                <th>Change</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody"></tbody>
           </table>
         </div>
       </div>

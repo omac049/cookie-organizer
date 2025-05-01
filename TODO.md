@@ -29,7 +29,7 @@
 ### Additional Features
 - [x] Create settings panel for user preferences
 - [x] Add comparison view to see cookie changes over time
-- [ ] Implement cookie monitoring for changes
+- [x] Implement cookie monitoring for changes
 - [x] Add support for copying cookie values to clipboard
 - [ ] Create "cookie reports" with detailed analytics
 
