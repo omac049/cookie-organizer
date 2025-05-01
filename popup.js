@@ -1,0 +1,2718 @@
+// Cookie Organizer Popup Script
+/* global Chart */
+
+// Define critical variables at the very beginning of the file
+const relationshipNames = {
+  "primary": "Primary/First-Party",
+  "secondary": "Secondary",
+  "thirdParty": "Third-Party"
+};
+
+// Define initializeTheme function at the beginning
+function initializeTheme() {
+  try {
+    const savedTheme = localStorage.getItem("cookieOrganizerTheme");
+    
+    if (savedTheme) {
+      document.documentElement.setAttribute("data-theme", savedTheme);
+      if (typeof updateThemeIcon === "function") {
+        updateThemeIcon(savedTheme);
+      }
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      document.documentElement.setAttribute("data-theme", "dark");
+      if (typeof updateThemeIcon === "function") {
+        updateThemeIcon("dark");
+      }
+    }
+  } catch (error) {
+    console.error("Error initializing theme:", error);
+  }
+}
+
+// Define updateThemeIcon function
+function updateThemeIcon(theme) {
+  const themeToggle = document.getElementById("themeToggle");
+  if (themeToggle) {
+    if (theme === "dark") {
+      themeToggle.innerHTML = "☀️"; // Sun emoji for dark mode (to switch to light)
+    } else {
+      themeToggle.innerHTML = "🌙"; // Moon emoji for light mode (to switch to dark)
+    }
+  }
+}
+
+// Define scanCurrentSiteCookies function at the very top of the file, before any event listeners
+function scanCurrentSiteCookies() {
+  console.log("Scanning current site cookies...");
+  
+  // Show loading indicator if it exists
+  const loadingIndicator = document.getElementById("loadingIndicator");
+  if (loadingIndicator) {
+    loadingIndicator.style.display = "block";
+  }
+  
+  // Get the currently active tab via Chrome API
+  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    if (!tabs || !tabs[0]) {
+      console.error("No active tab found");
+      if (loadingIndicator) loadingIndicator.style.display = "none";
+      return;
+    }
+    
+    const currentTab = tabs[0];
+    siteUrl = currentTab.url;
+    
+    // Request cookies from the background script
+    chrome.runtime.sendMessage({
+      action: "getCookies",
+      url: currentTab.url
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error("Error getting cookies:", chrome.runtime.lastError);
+        if (loadingIndicator) loadingIndicator.style.display = "none";
+        return;
+      }
+      
+      if (!response || !response.cookies) {
+        console.error("Invalid response from background script");
+        if (loadingIndicator) loadingIndicator.style.display = "none";
+        return;
+      }
+      
+      // Store cookies and update UI
+      siteCookies = response.cookies;
+      cookiesByPurpose = response.cookiesByPurpose;
+      cookiesByRelationship = response.cookiesByRelationship;
+      
+      // Update statistics
+      if (response.stats && typeof updateStats === "function") {
+        updateStats(response.stats);
+      }
+      
+      // Render cookies in the UI
+      if (typeof renderCookies === "function") {
+        renderCookies();
+      }
+      
+      // Hide loading indicator
+      if (loadingIndicator) loadingIndicator.style.display = "none";
+      
+      // Add expiration warnings if applicable
+      if (typeof addExpirationWarnings === "function") {
+        addExpirationWarnings();
+      }
+      
+      // Set up cookie checkbox functionality
+      if (typeof setupCookieCheckboxes === "function") {
+        setupCookieCheckboxes();
+      }
+      
+      // Add copy buttons to cookie values
+      if (typeof addCopyButtonsToCookieValues === "function") {
+        addCopyButtonsToCookieValues();
+      }
+      
+      // Set up decode buttons for encoded values
+      if (typeof setupDecodeButtons === "function") {
+        setupDecodeButtons();
+      }
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // UI Elements
+  const refreshButton = document.getElementById("refreshButton");
+  const exportButton = document.getElementById("exportButton");
+  const totalCookiesEl = document.getElementById("totalCookies");
+  const primaryCountEl = document.getElementById("primaryCount");
+  const thirdPartyCountEl = document.getElementById("thirdPartyCount");
+  const siteUrlEl = document.getElementById("siteUrl");
+  const searchBox = document.getElementById("searchBox");
+  const loadingIndicator = document.getElementById("loadingIndicator");
+  const noCookies = document.getElementById("noCookies");
+  const byPurposeTab = document.getElementById("byPurposeTab");
+  const byRelationshipTab = document.getElementById("byRelationshipTab");
+  const allCookiesTab = document.getElementById("allCookiesTab");
+  const chartsTab = document.getElementById("chartsTab");
+  const eduDomainHelp = document.getElementById("eduDomainHelp");
+  const themeToggle = document.getElementById("themeToggle");
+  const filterToggle = document.getElementById("filterToggle");
+  const advancedFilters = document.getElementById("advancedFilters");
+  const resetFiltersBtn = document.getElementById("resetFilters");
+  
+  // Bulk management elements
+  const bulkActionsBar = document.getElementById("bulkActions");
+  const selectAllCheckbox = document.getElementById("selectAllCheckbox");
+  const selectedCountDisplay = document.getElementById("selectedCount");
+  const deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
+  const selectVisibleBtn = document.getElementById("selectVisibleBtn");
+  const deselectAllBtn = document.getElementById("deselectAllBtn");
+  
+  // Chart canvases
+  const purposeChartCanvas = document.getElementById("purposeChart");
+  const relationshipChartCanvas = document.getElementById("relationshipChart");
+  const securityChartCanvas = document.getElementById("securityChart");
+  const sessionChartCanvas = document.getElementById("sessionChart");
+  
+  // Chart instances
+  let purposeChart = null;
+  let relationshipChart = null;
+  let securityChart = null;
+  let sessionChart = null;
+  
+  // Create Set for selected cookies early
+  let selectedCookies = new Set();
+  
+  // Tutorial manager for onboarding experience - defining it early to avoid reference errors
+  const tutorialManager = {
+    init: function() {
+      // Check if this is the first run
+      chrome.storage.local.get("tutorialComplete", (result) => {
+        if (!result.tutorialComplete) {
+          this.startTutorial();
+        }
+      });
+    },
+    
+    startTutorial: function() {
+      console.log("Starting tutorial...");
+      
+      // Create tutorial overlay container if it doesn't exist
+      let tutorialOverlay = document.getElementById("tutorialOverlay");
+      if (!tutorialOverlay) {
+        tutorialOverlay = document.createElement("div");
+        tutorialOverlay.id = "tutorialOverlay";
+        tutorialOverlay.className = "tutorial-overlay";
+        document.body.appendChild(tutorialOverlay);
+        
+        // Add CSS for tutorial overlay
+        const style = document.createElement("style");
+        style.textContent = `
+          .tutorial-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.7);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+            text-align: center;
+          }
+          .tutorial-content {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+          }
+          .tutorial-step {
+            display: none;
+          }
+          .tutorial-step.active {
+            display: block;
+          }
+          .tutorial-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+          }
+          .tutorial-buttons button {
+            width: auto;
+            margin: 0 5px;
+          }
+        `;
+        document.head.appendChild(style);
+        
+        // Create tutorial content
+        const tutorialContent = document.createElement("div");
+        tutorialContent.className = "tutorial-content";
+        tutorialOverlay.appendChild(tutorialContent);
+        
+        // Add tutorial steps
+        const steps = [
+          {
+            title: "Welcome to Cookie Organizer!",
+            content: "This extension helps you understand and manage the cookies used by websites you visit. Let's take a quick tour."
+          },
+          {
+            title: "Cookie Categories",
+            content: "Cookies are organized by their purpose (necessary, preferences, analytics, etc.) and their relationship to the site (primary or third-party)."
+          },
+          {
+            title: "Advanced Features",
+            content: "You can search for specific cookies, filter by attributes, and even decode complex cookie values like JWT tokens."
+          },
+          {
+            title: "Cookie Management",
+            content: "Easily delete individual cookies or use bulk actions to manage multiple cookies at once."
+          },
+          {
+            title: "Data Visualization",
+            content: "The Charts tab provides visual insights into the cookies used by the site."
+          },
+          {
+            title: "You're all set!",
+            content: "You now know the basics of Cookie Organizer. Happy browsing!"
+          }
+        ];
+        
+        // Create tutorial steps
+        steps.forEach((step, index) => {
+          const stepElement = document.createElement("div");
+          stepElement.className = `tutorial-step ${index === 0 ? "active" : ""}`;
+          stepElement.innerHTML = `
+            <h2>${step.title}</h2>
+            <p>${step.content}</p>
+            <div class="tutorial-progress">${index + 1} of ${steps.length}</div>
+          `;
+          tutorialContent.appendChild(stepElement);
+        });
+        
+        // Add navigation buttons
+        const buttonsContainer = document.createElement("div");
+        buttonsContainer.className = "tutorial-buttons";
+        
+        const prevButton = document.createElement("button");
+        prevButton.textContent = "Previous";
+        prevButton.style.display = "none"; // Hide initially
+        prevButton.addEventListener("click", () => this.navigateStep(-1));
+        
+        const nextButton = document.createElement("button");
+        nextButton.textContent = "Next";
+        nextButton.addEventListener("click", () => this.navigateStep(1));
+        
+        const skipButton = document.createElement("button");
+        skipButton.textContent = "Skip Tutorial";
+        skipButton.style.backgroundColor = "transparent";
+        skipButton.style.color = "var(--text-color)";
+        skipButton.style.border = "1px solid var(--border-color)";
+        skipButton.addEventListener("click", () => this.endTutorial());
+        
+        buttonsContainer.appendChild(skipButton);
+        buttonsContainer.appendChild(prevButton);
+        buttonsContainer.appendChild(nextButton);
+        tutorialContent.appendChild(buttonsContainer);
+        
+        // Store tutorial elements for later use
+        this.tutorialOverlay = tutorialOverlay;
+        this.tutorialSteps = document.querySelectorAll(".tutorial-step");
+        this.prevButton = prevButton;
+        this.nextButton = nextButton;
+        this.currentStep = 0;
+        this.totalSteps = steps.length;
+      }
+    },
+    
+    navigateStep: function(direction) {
+      const newStep = this.currentStep + direction;
+      
+      // Validate step range
+      if (newStep >= 0 && newStep < this.totalSteps) {
+        // Hide current step
+        this.tutorialSteps[this.currentStep].classList.remove("active");
+        
+        // Show new step
+        this.currentStep = newStep;
+        this.tutorialSteps[this.currentStep].classList.add("active");
+        
+        // Update button visibility
+        this.prevButton.style.display = this.currentStep > 0 ? "block" : "none";
+        
+        if (this.currentStep === this.totalSteps - 1) {
+          this.nextButton.textContent = "Finish";
+        } else {
+          this.nextButton.textContent = "Next";
+        }
+      } else if (newStep === this.totalSteps) {
+        // User reached the end
+        this.endTutorial();
+      }
+    },
+    
+    endTutorial: function() {
+      if (this.tutorialOverlay) {
+        this.tutorialOverlay.remove();
+      }
+      
+      // Mark tutorial as complete
+      chrome.storage.local.set({ tutorialComplete: true });
+    }
+  };
+  
+  // Tab navigation
+  const tabs = document.querySelectorAll(".tab");
+  const tabContents = document.querySelectorAll(".tab-content");
+  
+  // Initialize tabs if they exist
+  if (tabs && tabs.length > 0) {
+    tabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        // Remove active class from all tabs and contents
+        tabs.forEach(t => t.classList.remove("active"));
+        tabContents.forEach(c => c.classList.remove("active"));
+        
+        // Add active class to clicked tab and corresponding content
+        tab.classList.add("active");
+        const tabId = tab.getAttribute("data-tab");
+        
+        if (tabId === "by-purpose") {
+          byPurposeTab.classList.add("active");
+        } else if (tabId === "by-relationship") {
+          byRelationshipTab.classList.add("active");
+        } else if (tabId === "all-cookies") {
+          allCookiesTab.classList.add("active");
+        } else if (tabId === "charts") {
+          chartsTab.classList.add("active");
+          // If charts tab is clicked, render/update the charts
+          renderCharts();
+        }
+      });
+    });
+  }
+  
+  // Store cookie data
+  let siteUrl = "";
+  let cookiesByRelationship = null;
+  let cookiesByPurpose = null;
+  let siteCookies = null;
+  let searchDebounceTimeout = null;
+  
+  // Purpose category names for display
+  const purposeNames = {
+    "necessary": "Necessary",
+    "preferences": "Preferences",
+    "analytics": "Analytics",
+    "marketing": "Marketing",
+    "social": "Social Media",
+    "unknown": "Unknown"
+  };
+  
+  // Relationship category names for display
+  const relationshipNames = {
+    "primary": "Primary/First-Party",
+    "secondary": "Secondary",
+    "thirdParty": "Third-Party"
+  };
+  
+  // Store filter state
+  let activeFilters = {
+    secure: true,
+    httpOnly: true,
+    session: true,
+    purpose: ["necessary", "preferences", "analytics", "marketing", "social", "unknown"],
+    relationship: ["primary", "secondary", "thirdParty"]
+  };
+  
+  // Format date from timestamp
+  function formatDate(timestamp) {
+    if (!timestamp) return "Session cookie";
+    return new Date(timestamp * 1000).toLocaleString();
+  }
+  
+  // Debounce function for search to prevent excessive re-renders
+  function debounce(func, delay) {
+    return function() {
+      const context = this;
+      const args = arguments;
+      clearTimeout(searchDebounceTimeout);
+      searchDebounceTimeout = setTimeout(() => {
+        func.apply(context, args);
+      }, delay);
+    };
+  }
+  
+  // Theme management
+  function initializeTheme() {
+    // Check for saved theme preference or use system preference
+    const savedTheme = localStorage.getItem("cookieOrganizerTheme");
+    
+    if (savedTheme) {
+      document.documentElement.setAttribute("data-theme", savedTheme);
+      updateThemeIcon(savedTheme);
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      // If no saved preference, use system preference
+      document.documentElement.setAttribute("data-theme", "dark");
+      updateThemeIcon("dark");
+    }
+  }
+  
+  function updateThemeIcon(theme) {
+    const toggleIcon = themeToggle.querySelector(".toggle-icon");
+    toggleIcon.textContent = theme === "dark" ? "☀️" : "🌙";
+  }
+  
+  // Toggle between light and dark theme
+  function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute("data-theme");
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    
+    document.documentElement.setAttribute("data-theme", newTheme);
+    localStorage.setItem("cookieOrganizerTheme", newTheme);
+    updateThemeIcon(newTheme);
+    
+    // Update charts if they exist
+    if (purposeChart || relationshipChart || securityChart || sessionChart) {
+      setTimeout(renderCharts, 100); // Short delay to allow CSS variables to update
+    }
+  }
+  
+  // Event listener for theme toggle
+  themeToggle.addEventListener("click", toggleTheme);
+  
+  // Initialize theme on load
+  initializeTheme();
+  
+  // Copy cookie value to clipboard
+  function addCopyButton(cookieValue, cookieValueElement) {
+    const copyBtn = document.createElement("span");
+    copyBtn.className = "copy-btn";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      
+      // Copy to clipboard
+      navigator.clipboard.writeText(cookieValue)
+        .then(() => {
+          // Visual feedback
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => {
+            copyBtn.textContent = "Copy";
+          }, 1500);
+        })
+        .catch(err => {
+          console.error("Could not copy text: ", err);
+          copyBtn.textContent = "Error";
+          setTimeout(() => {
+            copyBtn.textContent = "Copy";
+          }, 1500);
+        });
+    });
+    
+    cookieValueElement.appendChild(copyBtn);
+  }
+  
+  // Add copy buttons to all cookie values on the page
+  function addCopyButtonsToCookieValues() {
+    document.querySelectorAll(".cookie-value").forEach(element => {
+      const cookieValue = element.getAttribute("data-value");
+      if (cookieValue) {
+        addCopyButton(cookieValue, element);
+      }
+    });
+  }
+  
+  // Define createCookieItemHTML function to fix the reference error
+  function createCookieItemHTML(cookie) {
+    if (!cookie) return '';
+    
+    // Format expiration date
+    let expirationText = "Session cookie";
+    let expirationWarning = "";
+    
+    if (cookie.expirationDate) {
+      const expDate = new Date(cookie.expirationDate * 1000);
+      expirationText = expDate.toLocaleString();
+      
+      // Add warning for cookies expiring within 3 days
+      const now = new Date();
+      const threeDaysFromNow = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000));
+      
+      if (expDate < threeDaysFromNow) {
+        expirationWarning = `<span class="expiration-warning" title="This cookie will expire soon">⚠️</span>`;
+      }
+    }
+    
+    // Create badges for cookie attributes
+    const badges = [];
+    if (cookie.secure) badges.push('<span class="badge secure">Secure</span>');
+    if (cookie.httpOnly) badges.push('<span class="badge httponly">HttpOnly</span>');
+    if (!cookie.expirationDate) badges.push('<span class="badge session">Session</span>');
+    
+    // Add relationship badge if available
+    if (cookie.relationshipCategory) {
+      badges.push(`<span class="badge ${cookie.relationshipCategory}">${getRelationshipDescription(cookie.relationshipCategory)}</span>`);
+    }
+    
+    // Add purpose badge if available
+    if (cookie.purposeCategory) {
+      badges.push(`<span class="badge ${cookie.purposeCategory}">${typeof getPurposeDescription === "function" ? 
+        getPurposeDescription(cookie.purposeCategory) : cookie.purposeCategory}</span>`);
+    }
+    
+    // Generate cookie ID for selection
+    const cookieId = `${cookie.name}_${cookie.domain}_${cookie.path || "/"}`;
+    
+    // Generate cookie item HTML
+    return `
+      <div class="cookie-item" data-cookie-id="${cookieId}">
+        <input type="checkbox" class="cookie-checkbox" data-cookie-id="${cookieId}">
+        <div class="cookie-content">
+          <div class="cookie-header">
+            <div class="cookie-name-container">
+              <span class="cookie-name">${cookie.name}</span>
+              ${expirationWarning}
+            </div>
+            <div class="cookie-actions">
+              <button class="delete" data-cookie-name="${cookie.name}" data-cookie-domain="${cookie.domain}" data-cookie-path="${cookie.path || "/"}">Delete</button>
+            </div>
+          </div>
+          <div class="cookie-metadata">
+            ${badges.join("")}
+          </div>
+          <div class="cookie-details">
+            Domain: ${cookie.domain} | Path: ${cookie.path || "/"} | Expires: ${expirationText}
+          </div>
+          <div class="cookie-value" data-original-value="${encodeURIComponent(cookie.value || "")}">
+            ${cookie.value || "(empty value)"}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  // Get description for cookie relationship
+  function getRelationshipDescription(relationship) {
+    return relationshipNames[relationship] || relationship;
+  }
+
+  // Handle decode button click
+  function handleDecodeButtonClick(e) {
+    const btn = e.target;
+    const cookieItem = btn.closest('.cookie-item');
+    const valueContainer = cookieItem.querySelector('.cookie-value');
+    const originalValue = valueContainer.getAttribute('data-value');
+    
+    // Toggle between original and decoded view
+    if (btn.textContent === 'Decode') {
+      // Decode the cookie value
+      const decodedData = cookieValueInterpreter.interpret(originalValue);
+      
+      if (decodedData.success) {
+        // Save original HTML and show decoded value
+        valueContainer.setAttribute('data-original-html', valueContainer.innerHTML);
+        valueContainer.innerHTML = decodedData.result;
+        btn.textContent = 'Show Original';
+        btn.classList.add('decoded');
+        
+        // Add class to indicate decoded format
+        if (decodedData.type) {
+          cookieItem.setAttribute('data-decoded-type', decodedData.type);
+        }
+      } else {
+        btn.textContent = 'Cannot Decode';
+        setTimeout(() => {
+          btn.textContent = 'Decode';
+        }, 2000);
+      }
+    } else {
+      // Restore original view
+      const originalHTML = valueContainer.getAttribute('data-original-html');
+      if (originalHTML) {
+        valueContainer.innerHTML = originalHTML;
+      } else {
+        valueContainer.textContent = originalValue;
+      }
+      btn.textContent = 'Decode';
+      btn.classList.remove('decoded');
+      cookieItem.removeAttribute('data-decoded-type');
+    }
+  }
+
+  // Set up decode buttons
+  function setupDecodeButtons() {
+    document.querySelectorAll('.decode-btn').forEach(btn => {
+      // Remove existing listeners before adding new ones
+      btn.removeEventListener('click', handleDecodeButtonClick);
+      btn.addEventListener('click', handleDecodeButtonClick);
+    });
+  }
+
+  // Cookie editing functionality
+  const cookieEditor = {
+    modal: null,
+    closeBtn: null,
+    cancelBtn: null,
+    saveBtn: null,
+    form: null,
+    expTypeSelect: null,
+    relativeInputs: null,
+    absoluteInputs: null,
+    currentCookie: null,
+    
+    // Initialize cookie editor
+    init: function() {
+      this.modal = document.getElementById("editCookieModal");
+      this.closeBtn = document.querySelector(".close-modal");
+      this.cancelBtn = document.getElementById("cancelEditBtn");
+      this.saveBtn = document.getElementById("saveCookieBtn");
+      this.form = document.getElementById("cookieEditForm");
+      this.expTypeSelect = document.getElementById("editCookieExpType");
+      this.relativeInputs = document.getElementById("relativeExpirationInputs");
+      this.absoluteInputs = document.getElementById("absoluteExpirationInputs");
+      
+      // Add event listeners
+      if (this.closeBtn) {
+        this.closeBtn.addEventListener("click", () => this.hideModal());
+      }
+      
+      if (this.cancelBtn) {
+        this.cancelBtn.addEventListener("click", () => this.hideModal());
+      }
+      
+      if (this.form) {
+        this.form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          this.saveCookieChanges();
+        });
+      }
+      
+      if (this.expTypeSelect) {
+        this.expTypeSelect.addEventListener("change", () => this.toggleExpirationInputs());
+      }
+      
+      // Close modal when clicking outside of it
+      window.addEventListener("click", (e) => {
+        if (e.target === this.modal) {
+          this.hideModal();
+        }
+      });
+    },
+    
+    // Setup edit buttons after rendering cookies
+    setupEditButtons: function() {
+      const editButtons = document.querySelectorAll(".edit-btn");
+      editButtons.forEach(button => {
+        button.addEventListener("click", (e) => {
+          e.preventDefault();
+          const cookieId = button.getAttribute("data-cookie-id");
+          this.openCookieEditor(cookieId);
+        });
+      });
+    },
+    
+    // Open cookie editor for a specific cookie
+    openCookieEditor: function(cookieId) {
+      if (!siteCookies) return;
+      
+      // Find the cookie data
+      const cookieParts = cookieId.split("_");
+      if (cookieParts.length < 2) return;
+      
+      const cookieName = cookieParts[0];
+      const cookieDomain = cookieParts[1];
+      const cookiePath = cookieParts.length > 2 ? cookieParts.slice(2).join("_") : "/";
+      
+      // Find the cookie object
+      const cookie = siteCookies.find(c => 
+        c.name === cookieName && 
+        c.domain === cookieDomain && 
+        (c.path || "/") === cookiePath
+      );
+      
+      if (!cookie) {
+        console.error("Cookie not found:", cookieId);
+        return;
+      }
+      
+      // Store the current cookie
+      this.currentCookie = cookie;
+      
+      // Fill the form with cookie data
+      document.getElementById("editCookieId").value = cookieId;
+      document.getElementById("editCookieName").value = cookie.name;
+      document.getElementById("editCookieDomain").value = cookie.domain;
+      document.getElementById("editCookiePath").value = cookie.path || "/";
+      document.getElementById("editCookieValue").value = cookie.value || "";
+      document.getElementById("editCookieSecure").checked = cookie.secure || false;
+      document.getElementById("editCookieHttpOnly").checked = cookie.httpOnly || false;
+      
+      // Set up expiration fields
+      if (!cookie.expirationDate) {
+        // Session cookie
+        document.getElementById("editCookieExpType").value = "session";
+        this.relativeInputs.style.display = "none";
+        this.absoluteInputs.style.display = "none";
+      } else {
+        // Default to absolute date/time
+        document.getElementById("editCookieExpType").value = "absolute";
+        this.relativeInputs.style.display = "none";
+        this.absoluteInputs.style.display = "flex";
+        
+        // Convert Unix timestamp to local datetime
+        const expirationDate = new Date(cookie.expirationDate * 1000);
+        const dateTimeStr = this.formatDateTimeForInput(expirationDate);
+        document.getElementById("editCookieExpDateTime").value = dateTimeStr;
+      }
+      
+      // Show the modal
+      this.modal.style.display = "block";
+    },
+    
+    // Hide the modal
+    hideModal: function() {
+      this.modal.style.display = "none";
+      this.currentCookie = null;
+    },
+    
+    // Toggle expiration inputs based on selected type
+    toggleExpirationInputs: function() {
+      const selectedType = this.expTypeSelect.value;
+      
+      switch (selectedType) {
+        case "session":
+          this.relativeInputs.style.display = "none";
+          this.absoluteInputs.style.display = "none";
+          break;
+        case "relative":
+          this.relativeInputs.style.display = "flex";
+          this.absoluteInputs.style.display = "none";
+          break;
+        case "absolute":
+          this.relativeInputs.style.display = "none";
+          this.absoluteInputs.style.display = "flex";
+          break;
+      }
+    },
+    
+    // Format date for datetime-local input
+    formatDateTimeForInput: function(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    },
+    
+    // Calculate expiration timestamp based on form inputs
+    calculateExpirationTimestamp: function() {
+      const expType = this.expTypeSelect.value;
+      
+      if (expType === "session") {
+        return null; // Session cookie, no expiration
+      } else if (expType === "relative") {
+        const value = parseInt(document.getElementById("editCookieExpValue").value, 10);
+        const unit = document.getElementById("editCookieExpUnit").value;
+        const now = new Date();
+        
+        // Add the relative time
+        switch (unit) {
+          case "seconds":
+            now.setSeconds(now.getSeconds() + value);
+            break;
+          case "minutes":
+            now.setMinutes(now.getMinutes() + value);
+            break;
+          case "hours":
+            now.setHours(now.getHours() + value);
+            break;
+          case "days":
+            now.setDate(now.getDate() + value);
+            break;
+          case "months":
+            now.setMonth(now.getMonth() + value);
+            break;
+          case "years":
+            now.setFullYear(now.getFullYear() + value);
+            break;
+        }
+        
+        return Math.floor(now.getTime() / 1000);
+      } else if (expType === "absolute") {
+        const dateTimeStr = document.getElementById("editCookieExpDateTime").value;
+        if (!dateTimeStr) return null;
+        
+        const expDate = new Date(dateTimeStr);
+        return Math.floor(expDate.getTime() / 1000);
+      }
+      
+      return null;
+    },
+    
+    // Save cookie changes
+    saveCookieChanges: function() {
+      if (!this.currentCookie) return;
+      
+      // Get form values
+      const newValue = document.getElementById("editCookieValue").value;
+      const newSecure = document.getElementById("editCookieSecure").checked;
+      const newHttpOnly = document.getElementById("editCookieHttpOnly").checked;
+      const newExpiration = this.calculateExpirationTimestamp();
+      
+      // Create updated cookie object
+      const updatedCookie = {
+        name: this.currentCookie.name,
+        domain: this.currentCookie.domain,
+        path: this.currentCookie.path || "/",
+        secure: newSecure,
+        httpOnly: newHttpOnly,
+        expirationDate: newExpiration,
+        value: newValue,
+        storeId: this.currentCookie.storeId
+      };
+      
+      // Calculate URL for cookie
+      const url = `${updatedCookie.secure ? "https" : "http"}://${updatedCookie.domain.replace(/^\./, "")}${updatedCookie.path}`;
+      
+      // Show loading state
+      this.saveBtn.textContent = "Saving...";
+      this.saveBtn.disabled = true;
+      
+      // Send update request to background script
+      chrome.runtime.sendMessage({
+        action: "updateCookie",
+        siteUrl: siteUrl,
+        cookie: {
+          ...updatedCookie,
+          url: url
+        }
+      }, response => {
+        if (response && response.success) {
+          // Update our cookie data
+          cookiesByRelationship = response.cookiesByRelationship;
+          cookiesByPurpose = response.cookiesByPurpose;
+          siteCookies = response.siteCookies;
+          
+          // Update stats
+          if (response.stats) {
+            updateStats(response.stats);
+          }
+          
+          // Re-render with current search term
+          renderCookies(searchBox.value);
+          
+          // Hide the modal
+          this.hideModal();
+        } else {
+          // Show error
+          alert("Error updating cookie: " + (response ? response.error : "Unknown error"));
+          this.saveBtn.textContent = "Save Changes";
+          this.saveBtn.disabled = false;
+        }
+      });
+    }
+  };
+
+  // Initialize the cookie editor when DOM is loaded
+  if (typeof cookieEditor !== 'undefined' && cookieEditor && cookieEditor.init) {
+    cookieEditor.init();
+  }
+  
+  // Initialize auto-refresh functionality
+  if (typeof autoRefresh !== 'undefined' && autoRefresh && autoRefresh.init) {
+    autoRefresh.init();
+  }
+  
+  // Initialize logs viewer
+  const logsViewer = {
+    init: function() {
+      console.log("Logs viewer initialized");
+      // Initialize logs viewer UI
+      const logsTab = document.getElementById("logsTab");
+      if (logsTab) {
+        const refreshLogsBtn = document.getElementById("refreshLogsBtn");
+        const clearLogsBtn = document.getElementById("clearLogsBtn");
+        const exportLogsBtn = document.getElementById("exportLogsBtn");
+        const logLevelSelect = document.getElementById("logLevelSelect");
+        const logsTableBody = document.getElementById("logsTableBody");
+        
+        // Add event listeners if elements exist
+        if (refreshLogsBtn) {
+          refreshLogsBtn.addEventListener("click", this.refreshLogs);
+        }
+        
+        if (clearLogsBtn) {
+          clearLogsBtn.addEventListener("click", this.clearLogs);
+        }
+        
+        if (exportLogsBtn) {
+          exportLogsBtn.addEventListener("click", this.exportLogs);
+        }
+        
+        if (logLevelSelect) {
+          logLevelSelect.addEventListener("change", (e) => {
+            this.setLogLevel(e.target.value);
+          });
+        }
+        
+        // Initial logs load
+        this.refreshLogs();
+      }
+    },
+    
+    refreshLogs: function() {
+      console.log("Refreshing logs");
+      chrome.runtime.sendMessage({ action: "getLogs" }, (response) => {
+        if (response && response.success && response.logs) {
+          this.displayLogs(response.logs);
+        } else {
+          console.error("Failed to get logs");
+        }
+      });
+    },
+    
+    displayLogs: function(logs) {
+      const logsTableBody = document.getElementById("logsTableBody");
+      if (!logsTableBody) return;
+      
+      if (!logs || logs.length === 0) {
+        logsTableBody.innerHTML = '<tr><td colspan="3" class="no-logs-message">No logs found</td></tr>';
+        return;
+      }
+      
+      logsTableBody.innerHTML = '';
+      logs.forEach(log => {
+        const row = document.createElement("tr");
+        row.className = `log-level-${log.level.toLowerCase()}`;
+        
+        row.innerHTML = `
+          <td>${new Date(log.timestamp).toLocaleTimeString()}</td>
+          <td><span class="log-level ${log.level.toLowerCase()}">${log.level}</span></td>
+          <td>${log.message}</td>
+        `;
+        
+        logsTableBody.appendChild(row);
+      });
+    },
+    
+    clearLogs: function() {
+      console.log("Clearing logs");
+      chrome.runtime.sendMessage({ action: "clearLogs" }, (response) => {
+        if (response && response.success) {
+          const logsTableBody = document.getElementById("logsTableBody");
+          if (logsTableBody) {
+            logsTableBody.innerHTML = '<tr><td colspan="3" class="no-logs-message">No logs found</td></tr>';
+          }
+        }
+      });
+    },
+    
+    exportLogs: function() {
+      console.log("Exporting logs");
+      chrome.runtime.sendMessage({ action: "getLogs" }, (response) => {
+        if (response && response.success && response.logs) {
+          const logs = response.logs;
+          
+          // Format logs as JSON
+          const logsJson = JSON.stringify(logs, null, 2);
+          
+          // Create download
+          const blob = new Blob([logsJson], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          
+          // Create download link
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `cookie_organizer_logs_${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(a);
+          a.click();
+          
+          // Clean up
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 100);
+        }
+      });
+    },
+    
+    setLogLevel: function(level) {
+      console.log("Setting log level to:", level);
+      chrome.runtime.sendMessage({ 
+        action: "setLogLevel",
+        level: parseInt(level)
+      });
+    }
+  };
+
+  // Initialize the tutorial
+  if (typeof tutorialManager !== 'undefined' && tutorialManager && tutorialManager.init) {
+    tutorialManager.init();
+  }
+
+  // Add placeholder functions if they don't exist
+  // Render cookies by relationship
+  if (typeof renderCookiesByRelationship !== "function") {
+    window.renderCookiesByRelationship = function(data, searchTerm = "", page = 1) {
+      console.log("renderCookiesByRelationship is not fully implemented");
+      if (byRelationshipTab) {
+        byRelationshipTab.innerHTML = "<div class='info-message'>Relationship view is not available</div>";
+      }
+    };
+  }
+
+  // Render all cookies
+  if (typeof renderAllCookies !== "function") {
+    window.renderAllCookies = function(cookies, searchTerm = "", page = 1) {
+      console.log("renderAllCookies is not fully implemented");
+      if (allCookiesTab) {
+        allCookiesTab.innerHTML = "<div class='info-message'>All cookies view is not available</div>";
+      }
+    };
+  }
+
+  // Add placeholder function for restoreCheckboxSelections if it doesn't exist
+  if (typeof restoreCheckboxSelections !== "function") {
+    window.restoreCheckboxSelections = function() {
+      // This function would normally restore checkbox states from a saved state
+      // We'll leave it as a no-op for now
+    };
+  }
+
+  // Settings manager to handle user preferences
+  const settingsManager = {
+    // Default settings
+    defaults: {
+      showCookieCount: true,
+      expandCategories: false,
+      defaultTab: "byPurposeTab",
+      autoRefresh: false,
+      refreshInterval: 60,
+      confirmDeletion: true,
+      logLevel: 1,
+      showDevTools: false
+    },
+    
+    // Current settings
+    current: {},
+    
+    // Initialize settings
+    init: function() {
+      const settingsBtn = document.getElementById("settingsBtn");
+      const settingsMenu = document.getElementById("settingsMenu");
+      const openSettingsBtn = document.getElementById("openSettingsBtn");
+      const settingsModal = document.getElementById("settingsModal");
+      const closeSettings = document.getElementById("closeSettings");
+      const resetSettingsBtn = document.getElementById("resetSettingsBtn");
+      const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+      
+      // Load saved settings
+      this.loadSettings();
+      
+      // Settings button click
+      if (settingsBtn) {
+        settingsBtn.addEventListener("click", () => {
+          settingsMenu.style.display = settingsMenu.style.display === "block" ? "none" : "block";
+        });
+      }
+      
+      // Open settings modal
+      if (openSettingsBtn) {
+        openSettingsBtn.addEventListener("click", () => {
+          settingsMenu.style.display = "none";
+          this.populateSettingsForm();
+          settingsModal.style.display = "block";
+        });
+      }
+      
+      // Close settings modal
+      if (closeSettings) {
+        closeSettings.addEventListener("click", () => {
+          settingsModal.style.display = "none";
+        });
+      }
+      
+      // Reset settings to defaults
+      if (resetSettingsBtn) {
+        resetSettingsBtn.addEventListener("click", () => {
+          this.resetToDefaults();
+          this.populateSettingsForm();
+        });
+      }
+      
+      // Save settings
+      if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener("click", () => {
+          this.saveSettingsFromForm();
+          settingsModal.style.display = "none";
+          this.applySettings();
+        });
+      }
+      
+      // Apply settings on load
+      this.applySettings();
+    },
+    
+    // Load settings from storage
+    loadSettings: function() {
+      chrome.storage.local.get("settings", (result) => {
+        if (result.settings) {
+          this.current = { ...this.defaults, ...result.settings };
+        } else {
+          this.current = { ...this.defaults };
+        }
+      });
+    },
+    
+    // Save settings to storage
+    saveSettings: function() {
+      chrome.storage.local.set({ settings: this.current });
+    },
+    
+    // Reset settings to defaults
+    resetToDefaults: function() {
+      this.current = { ...this.defaults };
+      this.saveSettings();
+    },
+    
+    // Populate form with current settings
+    populateSettingsForm: function() {
+      document.getElementById("setting-showCookieCount").checked = this.current.showCookieCount;
+      document.getElementById("setting-expandCategories").checked = this.current.expandCategories;
+      document.getElementById("setting-defaultTab").value = this.current.defaultTab;
+      document.getElementById("setting-autoRefresh").checked = this.current.autoRefresh;
+      document.getElementById("setting-refreshInterval").value = this.current.refreshInterval;
+      document.getElementById("setting-confirmDeletion").checked = this.current.confirmDeletion;
+      document.getElementById("setting-logLevel").value = this.current.logLevel;
+      document.getElementById("setting-showDevTools").checked = this.current.showDevTools;
+    },
+    
+    // Save settings from form
+    saveSettingsFromForm: function() {
+      this.current.showCookieCount = document.getElementById("setting-showCookieCount").checked;
+      this.current.expandCategories = document.getElementById("setting-expandCategories").checked;
+      this.current.defaultTab = document.getElementById("setting-defaultTab").value;
+      this.current.autoRefresh = document.getElementById("setting-autoRefresh").checked;
+      this.current.refreshInterval = parseInt(document.getElementById("setting-refreshInterval").value);
+      this.current.confirmDeletion = document.getElementById("setting-confirmDeletion").checked;
+      this.current.logLevel = parseInt(document.getElementById("setting-logLevel").value);
+      this.current.showDevTools = document.getElementById("setting-showDevTools").checked;
+      
+      this.saveSettings();
+    },
+    
+    // Apply current settings to UI
+    applySettings: function() {
+      // Apply default tab
+      if (this.current.defaultTab) {
+        const tabs = document.querySelectorAll(".category-tab");
+        const tabContents = document.querySelectorAll(".tab-content");
+        
+        tabs.forEach((tab) => {
+          tab.classList.remove("active");
+          if (tab.dataset.tab === this.current.defaultTab) {
+            tab.classList.add("active");
+          }
+        });
+        
+        tabContents.forEach((content) => {
+          content.classList.remove("active");
+          if (content.id === this.current.defaultTab) {
+            content.classList.add("active");
+          }
+        });
+      }
+      
+      // Apply auto-refresh
+      if (this.current.autoRefresh) {
+        startAutoRefresh(this.current.refreshInterval);
+      } else {
+        stopAutoRefresh();
+      }
+      
+      // Apply log level
+      chrome.runtime.sendMessage({ 
+        action: "setLogLevel", 
+        level: this.current.logLevel 
+      });
+      
+      // Apply cookie count visibility
+      const cookieCountElements = document.querySelectorAll(".cookie-count");
+      cookieCountElements.forEach((element) => {
+        element.style.display = this.current.showCookieCount ? "block" : "none";
+      });
+      
+      // Apply expandCategories if needed
+      if (this.current.expandCategories) {
+        document.querySelectorAll(".category-cookies").forEach((element) => {
+          element.classList.add("open");
+        });
+      }
+    }
+  };
+  
+  // Add expiration warnings to cookies that are expiring soon
+  function addExpirationWarnings() {
+    const cookieItems = document.querySelectorAll(".cookie-item");
+    
+    cookieItems.forEach(item => {
+      // Get expiration information from the cookie details
+      const detailsElement = item.querySelector(".cookie-details");
+      if (!detailsElement) return;
+      
+      const expiresMatch = detailsElement.textContent.match(/Expires: ([^|]+)/);
+      if (!expiresMatch) return;
+      
+      const expiresText = expiresMatch[1].trim();
+      if (expiresText === "Session") return; // Skip session cookies
+      
+      const expiresDate = new Date(expiresText);
+      const now = new Date();
+      
+      // Calculate time difference in days
+      const timeDiffMs = expiresDate.getTime() - now.getTime();
+      const daysDiff = Math.ceil(timeDiffMs / (1000 * 3600 * 24));
+      
+      // Add warning for cookies expiring within 3 days
+      if (daysDiff <= 3 && daysDiff > 0) {
+        const namePart = item.querySelector(".cookie-name");
+        if (namePart) {
+          namePart.classList.add("expiring-soon");
+          
+          const warningSymbol = document.createElement("span");
+          warningSymbol.className = "expiration-warning";
+          warningSymbol.textContent = "⚠️";
+          namePart.appendChild(warningSymbol);
+          
+          const tooltip = document.createElement("span");
+          tooltip.className = "expiration-tooltip";
+          tooltip.textContent = `Expires in ${daysDiff} day${daysDiff !== 1 ? 's' : ''}`;
+          namePart.appendChild(tooltip);
+        }
+      }
+    });
+  }
+  
+  // Auto-refresh cookies periodically
+  let autoRefreshInterval = null;
+  
+  function startAutoRefresh(seconds) {
+    stopAutoRefresh(); // Clear any existing interval
+    
+    autoRefreshInterval = setInterval(() => {
+      console.log("Auto-refreshing cookies...");
+      scanCurrentSiteCookies();
+    }, seconds * 1000);
+  }
+  
+  function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+    }
+  }
+
+  // Initialize settings manager
+  if (typeof settingsManager !== "undefined" && settingsManager && settingsManager.init) {
+    settingsManager.init();
+  }
+  
+  // Add other existing initializations...
+}); 
+
+// Initialize the extension when the DOM is fully loaded
+document.addEventListener("DOMContentLoaded", function() {
+  console.log("Cookie Organizer extension loaded");
+  
+  // Access elements
+  const refreshButton = document.getElementById("refreshButton");
+  const searchBox = document.getElementById("searchBox");
+  const themeToggle = document.getElementById("themeToggle");
+  
+  // Initialize theme using the function we've defined properly
+  if (typeof initializeTheme === "function") {
+    initializeTheme();
+  } else {
+    console.error("initializeTheme function not found");
+    // Fallback to the safe implementation
+    safeInitializeTheme();
+  }
+  
+  // Initialize the comparison manager
+  if (typeof comparisonManager !== "undefined" && comparisonManager) {
+    comparisonManager.init();
+  }
+  
+  // Set up event listeners
+  if (refreshButton) {
+    refreshButton.addEventListener("click", scanCurrentSiteCookies);
+  }
+  
+  if (searchBox && typeof renderCookies === "function" && typeof debounce === "function") {
+    searchBox.addEventListener("input", debounce(function() {
+      renderCookies(searchBox.value);
+    }, 300));
+  }
+  
+  if (themeToggle && typeof toggleTheme === "function") {
+    themeToggle.addEventListener("click", toggleTheme);
+  }
+  
+  // Set up tab navigation
+  document.querySelectorAll(".category-tab").forEach(tab => {
+    tab.addEventListener("click", function() {
+      // Get current active tab
+      const currentActiveTab = document.querySelector(".category-tab.active");
+      const currentActiveContent = document.querySelector(".tab-content.active");
+      
+      // Get clicked tab and corresponding content
+      const clickedTabId = this.getAttribute("data-tab");
+      const clickedContent = document.getElementById(clickedTabId);
+      
+      // Remove active class from current tab/content
+      if (currentActiveTab) currentActiveTab.classList.remove("active");
+      if (currentActiveContent) currentActiveContent.classList.remove("active");
+      
+      // Add active class to clicked tab/content
+      this.classList.add("active");
+      if (clickedContent) clickedContent.classList.add("active");
+      
+      // If Charts tab is clicked, render charts
+      if (clickedTabId === "chartsTab" && typeof renderCharts === "function") {
+        renderCharts();
+      }
+      
+      // If Compare tab is clicked, make sure it's properly initialized
+      if (clickedTabId === "compareTab") {
+        if (typeof comparisonManager !== "undefined" && comparisonManager) {
+          if (typeof comparisonManager.init === "function") {
+            comparisonManager.init();
+          }
+        }
+      }
+    });
+  });
+  
+  // Initialize managers if they exist
+  if (typeof settingsManager !== "undefined" && settingsManager && typeof settingsManager.init === "function") {
+    settingsManager.init();
+  }
+  
+  if (typeof tutorialManager !== "undefined" && tutorialManager && typeof tutorialManager.init === "function") {
+    tutorialManager.init();
+  }
+  
+  // Initialize comparison manager
+  if (typeof comparisonManager !== "undefined" && comparisonManager && typeof comparisonManager.init === "function") {
+    comparisonManager.init();
+  }
+  
+  // Load cookies automatically when the popup opens
+  if (typeof loadCookies === "function") {
+    loadCookies();
+  }
+}); 
+
+// Ensure comparisonManager has access to formatDate function
+if (typeof comparisonManager !== "undefined" && comparisonManager) {
+  comparisonManager.formatDate = function(timestamp) {
+    if (!timestamp) return "Session cookie";
+    return new Date(timestamp * 1000).toLocaleString();
+  };
+}
+
+// Cookie snapshot and comparison manager
+// Assign methods to the global window.comparisonManager to avoid duplicate declaration
+window.comparisonManager = {
+  snapshots: [],
+  selectedSnapshots: [],
+  
+  formatDate: function(timestamp) {
+    if (!timestamp) return "Session cookie";
+    return new Date(timestamp * 1000).toLocaleString();
+  },
+  
+  init: function() {
+    try {
+      console.log("Initializing comparison manager");
+      
+      // Get DOM elements
+      const takeSnapshotBtn = document.getElementById("takeSnapshotBtn");
+      const clearSnapshotsBtn = document.getElementById("clearSnapshotsBtn");
+      const snapshotsList = document.getElementById("snapshotsList");
+      const compareTypeFilter = document.getElementById("compareTypeFilter");
+      
+      // Load previously saved snapshots
+      this.loadSnapshots();
+      
+      // Event listeners
+      if (takeSnapshotBtn) {
+        takeSnapshotBtn.addEventListener("click", () => this.takeSnapshot());
+      }
+      
+      if (clearSnapshotsBtn) {
+        clearSnapshotsBtn.addEventListener("click", () => this.clearSnapshots());
+      }
+      
+      if (compareTypeFilter) {
+        compareTypeFilter.addEventListener("change", () => {
+          if (this.selectedSnapshots.length === 2) {
+            this.compareSnapshots(
+              this.selectedSnapshots[0], 
+              this.selectedSnapshots[1],
+              compareTypeFilter.value
+            );
+          }
+        });
+      }
+      
+      // Initial render
+      this.renderSnapshotsList();
+    } catch (error) {
+      console.error("Error initializing comparison manager:", error);
+    }
+  },
+
+  // Add loadSnapshots method to the comparisonManager object
+  loadSnapshots: function() {
+    try {
+      console.log("Loading saved snapshots");
+      const savedSnapshots = localStorage.getItem("cookieOrganizerSnapshots");
+      if (savedSnapshots) {
+        this.snapshots = JSON.parse(savedSnapshots);
+        console.log(`Loaded ${this.snapshots.length} snapshots`);
+      } else {
+        console.log("No saved snapshots found");
+        this.snapshots = [];
+      }
+    } catch (error) {
+      console.error("Error loading snapshots:", error);
+      this.snapshots = [];
+    }
+  },
+  
+  saveSnapshots: function() {
+    try {
+      localStorage.setItem("cookieOrganizerSnapshots", JSON.stringify(this.snapshots));
+    } catch (error) {
+      console.error("Error saving snapshots:", error);
+    }
+  },
+  
+  takeSnapshot: function() {
+    if (!siteCookies || siteCookies.length === 0) {
+      alert("No cookies to snapshot. Please scan a site first.");
+      return;
+    }
+    
+    const snapshot = {
+      id: Date.now(),
+      timestamp: Math.floor(Date.now() / 1000),
+      url: siteUrl,
+      cookies: JSON.parse(JSON.stringify(siteCookies))
+    };
+    
+    this.snapshots.push(snapshot);
+    this.saveSnapshots();
+    this.renderSnapshotsList();
+  },
+  
+  clearSnapshots: function() {
+    if (!confirm("Are you sure you want to delete all snapshots?")) return;
+    
+    this.snapshots = [];
+    this.selectedSnapshots = [];
+    this.saveSnapshots();
+    this.renderSnapshotsList();
+    
+    // Clear comparison results
+    const comparisonResults = document.getElementById("comparisonResults");
+    if (comparisonResults) {
+      comparisonResults.innerHTML = "";
+    }
+  },
+  
+  renderSnapshotsList: function() {
+    const snapshotsList = document.getElementById("snapshotsList");
+    if (!snapshotsList) return;
+    
+    snapshotsList.innerHTML = "";
+    
+    if (this.snapshots.length === 0) {
+      snapshotsList.innerHTML = "<div class='no-snapshots'>No snapshots available. Take a snapshot to compare changes over time.</div>";
+      return;
+    }
+    
+    // Sort snapshots by timestamp (newest first)
+    const sortedSnapshots = [...this.snapshots].sort((a, b) => b.timestamp - a.timestamp);
+    
+    sortedSnapshots.forEach(snapshot => {
+      const snapshotEl = document.createElement("div");
+      snapshotEl.className = "snapshot-item";
+      
+      // Check if snapshot is selected
+      if (this.selectedSnapshots.find(s => s.id === snapshot.id)) {
+        snapshotEl.classList.add("selected");
+      }
+      
+      let hostname = "Unknown site";
+      try {
+        hostname = new URL(snapshot.url).hostname;
+      } catch (e) {
+        hostname = snapshot.url || "Unknown site";
+      }
+      
+      snapshotEl.innerHTML = `
+        <input type="checkbox" class="snapshot-checkbox" data-id="${snapshot.id}" 
+            ${this.selectedSnapshots.find(s => s.id === snapshot.id) ? "checked" : ""}>
+        <div class="snapshot-info">
+          <div class="snapshot-title">${hostname}</div>
+          <div class="snapshot-meta">
+            <span class="snapshot-time">${this.formatDate(snapshot.timestamp)}</span>
+            <span class="snapshot-count">${snapshot.cookies.length} cookies</span>
+          </div>
+        </div>
+      `;
+      
+      // Handle snapshot selection
+      const checkbox = snapshotEl.querySelector(".snapshot-checkbox");
+      if (checkbox) {
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) {
+            this.selectSnapshot(snapshot);
+          } else {
+            this.deselectSnapshot(snapshot);
+          }
+        });
+      }
+      
+      snapshotsList.appendChild(snapshotEl);
+    });
+  },
+  
+  selectSnapshot: function(snapshot) {
+    // Maximum of 2 snapshots can be selected for comparison
+    if (this.selectedSnapshots.length >= 2) {
+      // Remove the first (oldest) selection
+      this.selectedSnapshots.shift();
+    }
+    
+    this.selectedSnapshots.push(snapshot);
+    this.renderSnapshotsList();
+    
+    // If 2 snapshots are selected, compare them
+    if (this.selectedSnapshots.length === 2) {
+      const compareTypeFilter = document.getElementById("compareTypeFilter");
+      this.compareSnapshots(
+        this.selectedSnapshots[0], 
+        this.selectedSnapshots[1],
+        compareTypeFilter ? compareTypeFilter.value : "all"
+      );
+    } else {
+      // Clear comparison results
+      const comparisonResults = document.getElementById("comparisonResults");
+      if (comparisonResults) {
+        comparisonResults.innerHTML = "";
+      }
+    }
+  },
+  
+  deselectSnapshot: function(snapshot) {
+    this.selectedSnapshots = this.selectedSnapshots.filter(s => s.id !== snapshot.id);
+    this.renderSnapshotsList();
+    
+    // If 2 snapshots are still selected, compare them
+    if (this.selectedSnapshots.length === 2) {
+      const compareTypeFilter = document.getElementById("compareTypeFilter");
+      this.compareSnapshots(
+        this.selectedSnapshots[0], 
+        this.selectedSnapshots[1],
+        compareTypeFilter ? compareTypeFilter.value : "all"
+      );
+    } else {
+      // Clear comparison results
+      const comparisonResults = document.getElementById("comparisonResults");
+      if (comparisonResults) {
+        comparisonResults.innerHTML = "";
+      }
+    }
+  },
+  
+  compareSnapshots: function(snapshot1, snapshot2, filterType = "all") {
+    const comparisonResults = document.getElementById("comparisonResults");
+    if (!comparisonResults) return;
+    
+    // Sort snapshots by timestamp (oldest first)
+    let oldSnapshot, newSnapshot;
+    if (snapshot1.timestamp < snapshot2.timestamp) {
+      oldSnapshot = snapshot1;
+      newSnapshot = snapshot2;
+    } else {
+      oldSnapshot = snapshot2;
+      newSnapshot = snapshot1;
+    }
+    
+    // Find added, removed and modified cookies
+    const added = newSnapshot.cookies.filter(newCookie => 
+      !oldSnapshot.cookies.find(oldCookie => oldCookie.name === newCookie.name && oldCookie.domain === newCookie.domain)
+    );
+    
+    const removed = oldSnapshot.cookies.filter(oldCookie => 
+      !newSnapshot.cookies.find(newCookie => newCookie.name === oldCookie.name && newCookie.domain === oldCookie.domain)
+    );
+    
+    const modified = newSnapshot.cookies.filter(newCookie => {
+      const oldCookie = oldSnapshot.cookies.find(oldCookie => 
+        oldCookie.name === newCookie.name && oldCookie.domain === newCookie.domain
+      );
+      
+      if (!oldCookie) return false;
+      
+      // Check if any property has changed
+      return (
+        newCookie.value !== oldCookie.value ||
+        newCookie.expirationDate !== oldCookie.expirationDate ||
+        newCookie.path !== oldCookie.path ||
+        newCookie.secure !== oldCookie.secure ||
+        newCookie.httpOnly !== oldCookie.httpOnly ||
+        newCookie.sameSite !== oldCookie.sameSite
+      );
+    });
+    
+    // Clear previous results
+    comparisonResults.innerHTML = "";
+    
+    // Create header with snapshots info
+    const header = document.createElement("div");
+    header.className = "comparison-header";
+    
+    let oldHostname = "Unknown site";
+    let newHostname = "Unknown site";
+    
+    try {
+      oldHostname = new URL(oldSnapshot.url).hostname;
+      newHostname = new URL(newSnapshot.url).hostname;
+    } catch (e) {
+      oldHostname = oldSnapshot.url || "Unknown site";
+      newHostname = newSnapshot.url || "Unknown site";
+    }
+    
+    header.innerHTML = `
+      <div class="comparison-title">Comparing Snapshots</div>
+      <div class="comparison-snapshots">
+        <div class="comparison-snapshot old">
+          <div>Before: ${oldHostname}</div>
+          <div class="snapshot-time">${this.formatDate(oldSnapshot.timestamp)}</div>
+        </div>
+        <div class="comparison-snapshot new">
+          <div>After: ${newHostname}</div>
+          <div class="snapshot-time">${this.formatDate(newSnapshot.timestamp)}</div>
+        </div>
+      </div>
+      <div class="comparison-summary">
+        <div class="summary-item added">${added.length} added</div>
+        <div class="summary-item removed">${removed.length} removed</div>
+        <div class="summary-item modified">${modified.length} modified</div>
+      </div>
+    `;
+    
+    comparisonResults.appendChild(header);
+    
+    // Filter cookies based on selected type
+    let cookiesToShow = [];
+    
+    switch (filterType) {
+      case "added":
+        cookiesToShow = added.map(cookie => ({ type: "added", cookie }));
+        break;
+      case "removed":
+        cookiesToShow = removed.map(cookie => ({ type: "removed", cookie }));
+        break;
+      case "modified":
+        cookiesToShow = modified.map(cookie => {
+          const oldCookie = oldSnapshot.cookies.find(oldCookie => 
+            oldCookie.name === cookie.name && oldCookie.domain === cookie.domain
+          );
+          return { type: "modified", cookie, oldCookie };
+        });
+        break;
+      case "all":
+      default:
+        cookiesToShow = [
+          ...added.map(cookie => ({ type: "added", cookie })),
+          ...removed.map(cookie => ({ type: "removed", cookie })),
+          ...modified.map(cookie => {
+            const oldCookie = oldSnapshot.cookies.find(oldCookie => 
+              oldCookie.name === cookie.name && oldCookie.domain === cookie.domain
+            );
+            return { type: "modified", cookie, oldCookie };
+          })
+        ];
+    }
+    
+    // No changes to show
+    if (cookiesToShow.length === 0) {
+      const noChanges = document.createElement("div");
+      noChanges.className = "no-changes";
+      noChanges.textContent = "No cookie changes found with the selected filter.";
+      comparisonResults.appendChild(noChanges);
+      return;
+    }
+    
+    // Create cookie comparison list
+    const cookieList = document.createElement("div");
+    cookieList.className = "cookie-comparison-list";
+    
+    cookiesToShow.forEach(item => {
+      const cookieItem = document.createElement("div");
+      cookieItem.className = `cookie-comparison-item ${item.type}`;
+      
+      let itemContent = "";
+      
+      switch (item.type) {
+        case "added":
+          itemContent = `
+            <div class="comparison-badge added">+</div>
+            <div class="cookie-info">
+              <div class="cookie-name">${item.cookie.name}</div>
+              <div class="cookie-domain">${item.cookie.domain}</div>
+              <div class="cookie-value">${item.cookie.value}</div>
+            </div>
+          `;
+          break;
+        case "removed":
+          itemContent = `
+            <div class="comparison-badge removed">-</div>
+            <div class="cookie-info">
+              <div class="cookie-name">${item.cookie.name}</div>
+              <div class="cookie-domain">${item.cookie.domain}</div>
+              <div class="cookie-value">${item.cookie.value}</div>
+            </div>
+          `;
+          break;
+        case "modified":
+          // Highlight changed properties
+          const changes = {
+            value: item.cookie.value !== item.oldCookie.value,
+            expirationDate: item.cookie.expirationDate !== item.oldCookie.expirationDate,
+            path: item.cookie.path !== item.oldCookie.path,
+            secure: item.cookie.secure !== item.oldCookie.secure,
+            httpOnly: item.cookie.httpOnly !== item.oldCookie.httpOnly,
+            sameSite: item.cookie.sameSite !== item.oldCookie.sameSite
+          };
+          
+          itemContent = `
+            <div class="comparison-badge modified">~</div>
+            <div class="cookie-info">
+              <div class="cookie-name">${item.cookie.name}</div>
+              <div class="cookie-domain">${item.cookie.domain}</div>
+              ${changes.value ? `
+                <div class="diff-container">
+                  <div class="diff-label">Value:</div>
+                  <div class="diff-content">
+                    <div class="diff-old">${item.oldCookie.value}</div>
+                    <div class="diff-new">${item.cookie.value}</div>
+                  </div>
+                </div>
+              ` : `<div class="cookie-value">${item.cookie.value}</div>`}
+              
+              ${changes.expirationDate ? `
+                <div class="diff-container">
+                  <div class="diff-label">Expires:</div>
+                  <div class="diff-content">
+                    <div class="diff-old">${this.formatDate(item.oldCookie.expirationDate)}</div>
+                    <div class="diff-new">${this.formatDate(item.cookie.expirationDate)}</div>
+                  </div>
+                </div>
+              ` : ''}
+              
+              ${changes.path ? `
+                <div class="diff-container">
+                  <div class="diff-label">Path:</div>
+                  <div class="diff-content">
+                    <div class="diff-old">${item.oldCookie.path}</div>
+                    <div class="diff-new">${item.cookie.path}</div>
+                  </div>
+                </div>
+              ` : ''}
+              
+              ${changes.secure || changes.httpOnly || changes.sameSite ? `
+                <div class="diff-container">
+                  <div class="diff-label">Security:</div>
+                  <div class="diff-content">
+                    <div class="diff-old">
+                      ${item.oldCookie.secure ? 'Secure ' : ''}
+                      ${item.oldCookie.httpOnly ? 'HttpOnly ' : ''}
+                      ${item.oldCookie.sameSite ? `SameSite=${item.oldCookie.sameSite}` : ''}
+                    </div>
+                    <div class="diff-new">
+                      ${item.cookie.secure ? 'Secure ' : ''}
+                      ${item.cookie.httpOnly ? 'HttpOnly ' : ''}
+                      ${item.cookie.sameSite ? `SameSite=${item.cookie.sameSite}` : ''}
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+          break;
+      }
+      
+      cookieItem.innerHTML = itemContent;
+      cookieList.appendChild(cookieItem);
+    });
+    
+    comparisonResults.appendChild(cookieList);
+  }
+};
+
+// ... existing code ...
+
+// Initialize comparison manager
+if (typeof comparisonManager !== "undefined" && comparisonManager.init) {
+  comparisonManager.init();
+}
+// ... existing code ...
+
+// Implement a proper renderCookiesByRelationship function
+function renderCookiesByRelationship(data, searchTerm = "", page = 1) {
+  // Check if tab exists
+  const byRelationshipTab = document.getElementById("byRelationshipTab");
+  if (!byRelationshipTab) return;
+  
+  byRelationshipTab.innerHTML = "";
+  
+  if (!data || Object.keys(data).length === 0) {
+    byRelationshipTab.innerHTML = "<div class='no-cookies'>No cookies found for this site.</div>";
+    return;
+  }
+  
+  // Order of relationship categories
+  const relationshipOrder = [
+    "primary", "secondary", "thirdParty"
+  ];
+  
+  // Filter and display relationships in order
+  relationshipOrder.forEach(relationship => {
+    if (!data[relationship] || data[relationship].length === 0) return;
+    
+    const cookies = data[relationship];
+    
+    // Filter cookies based on search term and advanced filters - use the safe function
+    const filteredCookies = cookies.filter(cookie => safeApplyCookieFilters(cookie, searchTerm));
+    
+    if (filteredCookies.length === 0) return;
+    
+    // Create relationship category item
+    const relationshipItem = document.createElement("div");
+    relationshipItem.className = `domain-item ${relationship}`;
+    
+    // Relationship header
+    const relationshipHeader = document.createElement("div");
+    relationshipHeader.className = "category-header";
+    relationshipHeader.dataset.relationship = relationship;
+    relationshipHeader.innerHTML = `
+      <div>${relationshipNames[relationship] || relationship}</div>
+      <div class="category-cookie-count">${filteredCookies.length} cookie${filteredCookies.length !== 1 ? "s" : ""}</div>
+    `;
+    
+    // Add relationship item to container first
+    relationshipItem.appendChild(relationshipHeader);
+    
+    // Container for cookies in this relationship
+    const cookiesContainer = document.createElement("div");
+    cookiesContainer.className = "category-cookies";
+    cookiesContainer.dataset.relationship = relationship;
+    relationshipItem.appendChild(cookiesContainer);
+    
+    // Add to DOM before adding cookies
+    byRelationshipTab.appendChild(relationshipItem);
+    
+    // Add individual cookies
+    filteredCookies.forEach(cookie => {
+      const cookieHTML = createCookieItemHTML(cookie);
+      cookiesContainer.insertAdjacentHTML("beforeend", cookieHTML);
+    });
+  });
+  
+  // If no cookies match filters, show message
+  if (byRelationshipTab.children.length === 0) {
+    const noResults = document.createElement("div");
+    noResults.className = "no-cookies";
+    noResults.textContent = "No cookies match your current filters.";
+    byRelationshipTab.appendChild(noResults);
+  }
+  
+  // Add expiration warnings after rendering
+  addExpirationWarnings();
+  
+  // Setup event handlers
+  setupCategoryToggles();
+  addCopyButtonsToCookieValues();
+  setupCookieCheckboxes();
+  setupDecodeButtons();
+  
+  // Setup event listeners for delete buttons
+  document.querySelectorAll(".delete").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.preventDefault();
+      const cookieName = btn.dataset.cookieName;
+      const cookieDomain = btn.dataset.cookieDomain;
+      const cookiePath = btn.dataset.cookiePath;
+      
+      deleteCookie({
+        name: cookieName,
+        domain: cookieDomain,
+        path: cookiePath
+      });
+    });
+  });
+}
+
+// Implement a proper renderAllCookies function
+function renderAllCookies(cookies, searchTerm = "", page = 1) {
+  // Check if tab exists
+  const allCookiesTab = document.getElementById("allCookiesTab");
+  if (!allCookiesTab) return;
+  
+  allCookiesTab.innerHTML = "";
+  
+  if (!cookies || cookies.length === 0) {
+    allCookiesTab.innerHTML = "<div class='no-cookies'>No cookies found for this site.</div>";
+    return;
+  }
+  
+  // Filter cookies based on search term and advanced filters - use the safe function
+  const filteredCookies = cookies.filter(cookie => safeApplyCookieFilters(cookie, searchTerm));
+  
+  if (filteredCookies.length === 0) {
+    const noResults = document.createElement("div");
+    noResults.className = "no-cookies";
+    noResults.textContent = "No cookies match your current filters.";
+    allCookiesTab.appendChild(noResults);
+    return;
+  }
+  
+  // Create container for all cookies
+  const cookiesContainer = document.createElement("div");
+  cookiesContainer.className = "all-cookies-container";
+  allCookiesTab.appendChild(cookiesContainer);
+  
+  // Add individual cookies
+  filteredCookies.forEach(cookie => {
+    const cookieHTML = createCookieItemHTML(cookie);
+    cookiesContainer.insertAdjacentHTML("beforeend", cookieHTML);
+  });
+  
+  // Add expiration warnings after rendering
+  addExpirationWarnings();
+  
+  // Setup event handlers
+  addCopyButtonsToCookieValues();
+  setupCookieCheckboxes();
+  setupDecodeButtons();
+  
+  // Setup event listeners for delete buttons
+  document.querySelectorAll(".delete").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.preventDefault();
+      const cookieName = btn.dataset.cookieName;
+      const cookieDomain = btn.dataset.cookieDomain;
+      const cookiePath = btn.dataset.cookiePath;
+      
+      deleteCookie({
+        name: cookieName,
+        domain: cookieDomain,
+        path: cookiePath
+      });
+    });
+  });
+}
+
+// Fix the tab switching functionality
+document.addEventListener("DOMContentLoaded", function() {
+  // Set up tab navigation
+  document.querySelectorAll(".category-tab").forEach(tab => {
+    tab.addEventListener("click", function() {
+      // Get current active tab
+      const currentActiveTab = document.querySelector(".category-tab.active");
+      const currentActiveContent = document.querySelector(".tab-content.active");
+      
+      // Get clicked tab and corresponding content
+      const clickedTabId = this.getAttribute("data-tab");
+      const clickedContent = document.getElementById(clickedTabId);
+      
+      // Remove active class from current tab/content
+      if (currentActiveTab) currentActiveTab.classList.remove("active");
+      if (currentActiveContent) currentActiveContent.classList.remove("active");
+      
+      // Add active class to clicked tab/content
+      this.classList.add("active");
+      if (clickedContent) clickedContent.classList.add("active");
+      
+      // If Charts tab is clicked, render charts
+      if (clickedTabId === "chartsTab" && typeof renderCharts === "function") {
+        renderCharts();
+      }
+    });
+  });
+});
+
+// Implement a proper function to restore checkbox selections
+function restoreCheckboxSelections() {
+  // If there are selected cookies, check their checkboxes
+  if (selectedCookies && selectedCookies.size > 0) {
+    // Find all cookie checkboxes
+    const checkboxes = document.querySelectorAll(".cookie-checkbox");
+    
+    // For each checkbox, check if its cookie is in the selectedCookies set
+    checkboxes.forEach(checkbox => {
+      const cookieName = checkbox.getAttribute("data-cookie-name");
+      const cookieDomain = checkbox.getAttribute("data-cookie-domain");
+      const cookiePath = checkbox.getAttribute("data-cookie-path") || "/";
+      
+      // Create a unique ID for this cookie
+      const cookieId = `${cookieName}_${cookieDomain}_${cookiePath}`;
+      
+      // Set checkbox state based on selection
+      checkbox.checked = selectedCookies.has(cookieId);
+      
+      // Set the data-cookie-id attribute for easier reference
+      checkbox.setAttribute("data-cookie-id", cookieId);
+    });
+    
+    // Show bulk actions bar if there are selections
+    if (bulkActionsBar) {
+      bulkActionsBar.style.display = selectedCookies.size > 0 ? "flex" : "none";
+    }
+  }
+}
+
+// Change the problematic condition that's throwing an error
+if (typeof comparisonManager !== "undefined" && comparisonManager) {
+  comparisonManager.formatDate = function(timestamp) {
+    if (!timestamp) return "Session cookie";
+    return new Date(timestamp * 1000).toLocaleString();
+  };
+}
+
+// Replace with:
+// Create a simple formatDate function available everywhere
+function formatCookieDate(timestamp) {
+  if (!timestamp) return "Session cookie";
+  return new Date(timestamp * 1000).toLocaleString();
+}
+
+// Initialize theme as a standalone function to avoid reference errors
+function safeInitializeTheme() {
+  try {
+    // Check for saved theme preference or use system preference
+    const savedTheme = localStorage.getItem("cookieOrganizerTheme");
+    
+    if (savedTheme) {
+      document.documentElement.setAttribute("data-theme", savedTheme);
+      // Update theme icon if function exists
+      if (typeof updateThemeIcon === "function") {
+        updateThemeIcon(savedTheme);
+      }
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      // If no saved preference, use system preference
+      document.documentElement.setAttribute("data-theme", "dark");
+      if (typeof updateThemeIcon === "function") {
+        updateThemeIcon("dark");
+      }
+    }
+  } catch (error) {
+    console.error("Error initializing theme:", error);
+  }
+}
+
+// Safely apply cookie filters with fallback
+function safeApplyCookieFilters(cookie, searchTerm = "") {
+  try {
+    // If the real function exists, use it
+    if (typeof applyCookieFilters === "function") {
+      return applyCookieFilters(cookie, searchTerm);
+    }
+    
+    // Otherwise use a simple fallback that just matches the search term
+    if (searchTerm) {
+      const searchTermLower = searchTerm.toLowerCase();
+      return cookie.name.toLowerCase().includes(searchTermLower) || 
+             cookie.domain.toLowerCase().includes(searchTermLower) ||
+             (cookie.value && cookie.value.toLowerCase().includes(searchTermLower));
+    }
+    
+    return true; // No filtering
+  } catch (error) {
+    console.error("Error applying cookie filters:", error);
+    return true; // Allow all cookies if there's an error
+  }
+}
+
+// Update the DOMContentLoaded event listener to use the safe functions
+document.addEventListener("DOMContentLoaded", function() {
+  console.log("Cookie Organizer extension loaded");
+  
+  // Access elements
+  const refreshButton = document.getElementById("refreshButton");
+  const searchBox = document.getElementById("searchBox");
+  const themeToggle = document.getElementById("themeToggle");
+  
+  // Initialize theme safely
+  safeInitializeTheme();
+  
+  // Set up event listeners
+  if (refreshButton && typeof scanCurrentSiteCookies === "function") {
+    refreshButton.addEventListener("click", scanCurrentSiteCookies);
+  }
+  
+  if (searchBox && typeof renderCookies === "function" && typeof debounce === "function") {
+    searchBox.addEventListener("input", debounce(function() {
+      renderCookies(searchBox.value);
+    }, 300));
+  }
+  
+  if (themeToggle && typeof toggleTheme === "function") {
+    themeToggle.addEventListener("click", toggleTheme);
+  }
+  
+  // Set up tab navigation
+  document.querySelectorAll(".category-tab").forEach(tab => {
+    tab.addEventListener("click", function() {
+      // Get current active tab
+      const currentActiveTab = document.querySelector(".category-tab.active");
+      const currentActiveContent = document.querySelector(".tab-content.active");
+      
+      // Get clicked tab and corresponding content
+      const clickedTabId = this.getAttribute("data-tab");
+      const clickedContent = document.getElementById(clickedTabId);
+      
+      // Remove active class from current tab/content
+      if (currentActiveTab) currentActiveTab.classList.remove("active");
+      if (currentActiveContent) currentActiveContent.classList.remove("active");
+      
+      // Add active class to clicked tab/content
+      this.classList.add("active");
+      if (clickedContent) clickedContent.classList.add("active");
+      
+      // If Charts tab is clicked, render charts
+      if (clickedTabId === "chartsTab" && typeof renderCharts === "function") {
+        renderCharts();
+      }
+    });
+  });
+  
+  // Load cookies automatically when the popup opens
+  if (typeof loadCookies === "function") {
+    loadCookies();
+  }
+});
+
+// Change the problematic condition that's throwing an error
+if (typeof comparisonManager !== "undefined" && comparisonManager) {
+  comparisonManager.formatDate = function(timestamp) {
+    if (!timestamp) return "Session cookie";
+    return new Date(timestamp * 1000).toLocaleString();
+  };
+}
+
+// Replace with:
+// Define a safe comparison manager that can be used throughout the code
+var safeComparisonManager = {
+  snapshots: [],
+  selectedSnapshots: [],
+  
+  init: function() {
+    try {
+      console.log("Initializing safe comparison manager");
+      
+      // Get DOM elements
+      const takeSnapshotBtn = document.getElementById("takeSnapshotBtn");
+      const clearSnapshotsBtn = document.getElementById("clearSnapshotsBtn");
+      const snapshotsList = document.getElementById("snapshotsList");
+      const compareTypeFilter = document.getElementById("compareTypeFilter");
+      
+      // Load previously saved snapshots
+      this.loadSnapshots();
+      
+      // Event listeners
+      if (takeSnapshotBtn) {
+        takeSnapshotBtn.addEventListener("click", () => this.takeSnapshot());
+      }
+      
+      if (clearSnapshotsBtn) {
+        clearSnapshotsBtn.addEventListener("click", () => this.clearSnapshots());
+      }
+      
+      if (compareTypeFilter) {
+        compareTypeFilter.addEventListener("change", () => {
+          if (this.selectedSnapshots.length === 2) {
+            this.compareSnapshots(
+              this.selectedSnapshots[0], 
+              this.selectedSnapshots[1],
+              compareTypeFilter.value
+            );
+          }
+        });
+      }
+      
+      // Initial render
+      this.renderSnapshotsList();
+    } catch (error) {
+      console.error("Error initializing comparison manager:", error);
+    }
+  },
+  
+  // Other methods would be defined here, matching the original comparisonManager
+  
+  // Simplified formatDate to ensure it's available
+  formatDate: function(timestamp) {
+    if (!timestamp) return "Session cookie";
+    return new Date(timestamp * 1000).toLocaleString();
+  }
+};
+
+// Add to the DOMContentLoaded event listener
+document.addEventListener("DOMContentLoaded", function() {
+  // After other initializations
+  
+  // Initialize safe comparison manager
+  safeComparisonManager.init();
+  
+  // Set up tab navigation with safe comparison manager
+  document.querySelectorAll(".category-tab").forEach(tab => {
+    tab.addEventListener("click", function() {
+      // Get clicked tab and corresponding content
+      const clickedTabId = this.getAttribute("data-tab");
+      
+      // If Compare tab is clicked, make sure it's properly initialized
+      if (clickedTabId === "compareTab") {
+        safeComparisonManager.init();
+      }
+    });
+  });
+});
+
+// Define a basic applyCookieFilters function if it doesn't exist
+function applyCookieFilters(cookie, searchTerm = "") {
+  // Apply search filtering
+  if (searchTerm) {
+    const searchTermLower = searchTerm.toLowerCase();
+    if (
+      !cookie.name.toLowerCase().includes(searchTermLower) &&
+      !cookie.domain.toLowerCase().includes(searchTermLower) &&
+      !(cookie.value && cookie.value.toLowerCase().includes(searchTermLower))
+    ) {
+      return false;
+    }
+  }
+  
+  // Check if we have active filters
+  const secureFilter = document.getElementById("secureFilter");
+  const httpOnlyFilter = document.getElementById("httpOnlyFilter");
+  const sessionFilter = document.getElementById("sessionFilter");
+  
+  // Apply checkbox filters if they exist
+  if (secureFilter && secureFilter.checked && !cookie.secure) {
+    return false;
+  }
+  
+  if (httpOnlyFilter && httpOnlyFilter.checked && !cookie.httpOnly) {
+    return false;
+  }
+  
+  if (sessionFilter && sessionFilter.checked && cookie.expirationDate) {
+    return false;
+  }
+  
+  // If all filters pass, show the cookie
+  return true;
+}
+
+// Define global variables for sharing across functions
+let siteCookies = [];
+let cookiesByPurpose = {};
+let cookiesByRelationship = {};
+let siteUrl = "";
+
+// Define a function for cookie purpose descriptions
+function getPurposeDescription(purpose) {
+  const descriptions = {
+    "necessary": "Essential for the website to function properly",
+    "preferences": "Remembers your settings and preferences",
+    "analytics": "Tracks how you use the website",
+    "marketing": "Used for advertising and marketing",
+    "social": "Enables social media features",
+    "unknown": "Purpose could not be determined"
+  };
+  return descriptions[purpose] || purpose;
+}
+
+// Add this section after the getPurposeDescription function
+// Define missing functions required for cookie loading
+function loadCookies() {
+  // Call scanCurrentSiteCookies to load cookies from the current site
+  scanCurrentSiteCookies();
+}
+
+function renderCookies(searchTerm = "") {
+  console.log("Rendering cookies...");
+  
+  // Get the active tab content
+  const activeTabContent = document.querySelector(".tab-content.active");
+  const activeTabId = activeTabContent ? activeTabContent.id : "";
+  
+  // Clear loading indicator
+  const loadingIndicator = document.getElementById("loadingIndicator");
+  if (loadingIndicator) {
+    loadingIndicator.style.display = "none";
+  }
+  
+  // Show "no cookies" message if there are no cookies
+  const noCookiesEl = document.getElementById("noCookies");
+  if (!siteCookies || siteCookies.length === 0) {
+    if (noCookiesEl) noCookiesEl.style.display = "block";
+    return;
+  } else {
+    if (noCookiesEl) noCookiesEl.style.display = "none";
+  }
+  
+  // Render cookies based on active tab
+  if (activeTabId === "byPurposeTab" && cookiesByPurpose) {
+    // Use renderCookiesByPurpose if it exists, otherwise log error
+    if (typeof renderCookiesByPurpose === "function") {
+      renderCookiesByPurpose(cookiesByPurpose, searchTerm);
+    } else {
+      console.error("renderCookiesByPurpose function is not defined");
+      document.getElementById("byPurposeTab").innerHTML = 
+        "<div class='error-message'>Cannot render cookies by purpose. Function not defined.</div>";
+    }
+  } else if (activeTabId === "byRelationshipTab" && cookiesByRelationship) {
+    // Use renderCookiesByRelationship if it exists, otherwise log error
+    if (typeof renderCookiesByRelationship === "function") {
+      renderCookiesByRelationship(cookiesByRelationship, searchTerm);
+    } else {
+      console.error("renderCookiesByRelationship function is not defined");
+      document.getElementById("byRelationshipTab").innerHTML = 
+        "<div class='error-message'>Cannot render cookies by relationship. Function not defined.</div>";
+    }
+  } else if (activeTabId === "allCookiesTab" && siteCookies) {
+    // Use renderAllCookies if it exists, otherwise log error
+    if (typeof renderAllCookies === "function") {
+      renderAllCookies(siteCookies, searchTerm);
+    } else {
+      console.error("renderAllCookies function is not defined");
+      document.getElementById("allCookiesTab").innerHTML = 
+        "<div class='error-message'>Cannot render all cookies. Function not defined.</div>";
+    }
+  }
+}
+
+// Define basic implementations of other missing functions
+function updateStats(stats) {
+  console.log("Updating cookie stats:", stats);
+  
+  if (!stats) return;
+  
+  const totalCookiesEl = document.getElementById("totalCookies");
+  const primaryCountEl = document.getElementById("primaryCount");
+  const thirdPartyCountEl = document.getElementById("thirdPartyCount");
+  const siteUrlEl = document.getElementById("siteUrl");
+  
+  if (totalCookiesEl) totalCookiesEl.textContent = stats.total || 0;
+  if (primaryCountEl) primaryCountEl.textContent = stats.primary || 0;
+  if (thirdPartyCountEl) thirdPartyCountEl.textContent = stats.thirdParty || 0;
+  if (siteUrlEl && siteUrl) {
+    try {
+      const url = new URL(siteUrl);
+      siteUrlEl.textContent = url.hostname;
+    } catch (e) {
+      siteUrlEl.textContent = siteUrl;
+    }
+  }
+}
+
+// Define placeholder for required but missing functions
+function setupCookieCheckboxes() {
+  console.log("setupCookieCheckboxes called");
+  // Basic implementation to prevent errors
+}
+
+function addExpirationWarnings() {
+  console.log("addExpirationWarnings called");
+  // Basic implementation to prevent errors
+}
+
+function addCopyButtonsToCookieValues() {
+  console.log("addCopyButtonsToCookieValues called");
+  // Basic implementation to prevent errors
+}
+
+function setupDecodeButtons() {
+  console.log("setupDecodeButtons called");
+  // Basic implementation to prevent errors
+}
+
+function deleteCookie(cookie) {
+  console.log("Deleting cookie:", cookie);
+  
+  if (!cookie || !cookie.name || !cookie.domain) {
+    console.error("Invalid cookie data for deletion");
+    return;
+  }
+  
+  // Send delete request to background script
+  chrome.runtime.sendMessage({
+    action: "deleteCookie",
+    cookie: cookie
+  }, function(response) {
+    if (chrome.runtime.lastError) {
+      console.error("Error deleting cookie:", chrome.runtime.lastError);
+      return;
+    }
+    
+    if (response && response.success) {
+      console.log("Cookie deleted successfully");
+      // Refresh cookies
+      scanCurrentSiteCookies();
+    } else {
+      console.error("Failed to delete cookie:", response ? response.error : "Unknown error");
+    }
+  });
+}
+
+// Add basic implementation of renderCookiesByPurpose
+function renderCookiesByPurpose(data, searchTerm = "") {
+  console.log("Rendering cookies by purpose");
+  
+  // Get the tab content element
+  const byPurposeTab = document.getElementById("byPurposeTab");
+  if (!byPurposeTab) return;
+  
+  // Clear existing content
+  byPurposeTab.innerHTML = "";
+  
+  if (!data || Object.keys(data).length === 0) {
+    byPurposeTab.innerHTML = "<div class='no-cookies'>No cookies found for this site.</div>";
+    return;
+  }
+  
+  // Purpose categories in order of display
+  const purposeOrder = [
+    "necessary", "preferences", "analytics", "marketing", "social", "unknown"
+  ];
+  
+  // Process each category
+  purposeOrder.forEach(purpose => {
+    if (!data[purpose] || data[purpose].length === 0) return;
+    
+    const cookies = data[purpose];
+    
+    // Filter cookies based on search term
+    const filteredCookies = searchTerm ? 
+      cookies.filter(cookie => 
+        cookie.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        cookie.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (cookie.value && cookie.value.toLowerCase().includes(searchTerm.toLowerCase()))
+      ) : cookies;
+    
+    if (filteredCookies.length === 0) return;
+    
+    // Create category container
+    const categoryItem = document.createElement("div");
+    categoryItem.className = `category-item ${purpose}`;
+    
+    // Category header
+    const categoryHeader = document.createElement("div");
+    categoryHeader.className = "category-header";
+    categoryHeader.dataset.purpose = purpose;
+    
+    const purposeDescription = typeof getPurposeDescription === "function" ? 
+      getPurposeDescription(purpose) : purpose;
+    
+    categoryHeader.innerHTML = `
+      <div class="category-title">${purposeNames[purpose] || purpose}</div>
+      <div class="category-description">${purposeDescription}</div>
+      <div class="category-cookie-count">${filteredCookies.length} cookie${filteredCookies.length !== 1 ? "s" : ""}</div>
+    `;
+    
+    categoryItem.appendChild(categoryHeader);
+    
+    // Container for cookies in this category
+    const cookiesContainer = document.createElement("div");
+    cookiesContainer.className = "category-cookies";
+    cookiesContainer.dataset.purpose = purpose;
+    categoryItem.appendChild(cookiesContainer);
+    
+    // Add to DOM
+    byPurposeTab.appendChild(categoryItem);
+    
+    // Add cookies to container
+    filteredCookies.forEach(cookie => {
+      const cookieHTML = createCookieItemHTML(cookie);
+      cookiesContainer.insertAdjacentHTML("beforeend", cookieHTML);
+    });
+  });
+  
+  // If no cookies match filters, show message
+  if (byPurposeTab.children.length === 0) {
+    const noResults = document.createElement("div");
+    noResults.className = "no-cookies";
+    noResults.textContent = "No cookies match your current filters.";
+    byPurposeTab.appendChild(noResults);
+  }
+}
+
+// Add utility function for debouncing
+function debounce(func, delay) {
+  let timeout;
+  return function() {
+    const context = this;
+    const args = arguments;
+    clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      func.apply(context, args);
+    }, delay);
+  };
+}
+
+// Add utility function for toggling theme
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute("data-theme");
+  const newTheme = currentTheme === "dark" ? "light" : "dark";
+  
+  document.documentElement.setAttribute("data-theme", newTheme);
+  localStorage.setItem("cookieOrganizerTheme", newTheme);
+  
+  // Update theme icon if function exists
+  if (typeof updateThemeIcon === "function") {
+    updateThemeIcon(newTheme);
+  }
+}
+
+// Add a basic implementation of renderCharts
+function renderCharts() {
+  console.log("Rendering charts...");
+  
+  // Get chart canvas elements
+  const purposeChartCanvas = document.getElementById("purposeChart");
+  const relationshipChartCanvas = document.getElementById("relationshipChart");
+  
+  // Skip if chart canvas elements don't exist
+  if (!purposeChartCanvas || !relationshipChartCanvas) {
+    console.warn("Chart canvas elements not found");
+    return;
+  }
+  
+  // Skip if no cookies available
+  if (!siteCookies || siteCookies.length === 0) {
+    console.warn("No cookies available for charts");
+    return;
+  }
+  
+  // Log that we would render charts here
+  console.log("Would render charts with", siteCookies.length, "cookies");
+  
+  // In a real implementation, we would:
+  // 1. Calculate data for charts based on cookies
+  // 2. Create Chart.js instances
+  // 3. Render the charts
+}
+
+// Update the document.addEventListener("DOMContentLoaded") section to ensure it calls loadCookies
+document.addEventListener("DOMContentLoaded", function() {
+  console.log("Cookie Organizer extension loaded");
+  
+  // Access elements
+  const refreshButton = document.getElementById("refreshButton");
+  const searchBox = document.getElementById("searchBox");
+  const themeToggle = document.getElementById("themeToggle");
+  
+  // Initialize theme using the function we've defined properly
+  if (typeof initializeTheme === "function") {
+    initializeTheme();
+  } else {
+    console.error("initializeTheme function not found");
+    // Fallback to the safe implementation
+    safeInitializeTheme();
+  }
+  
+  // Add this explicit call to loadCookies to ensure cookies load on popup open
+  if (typeof loadCookies === "function") {
+    console.log("Loading cookies automatically...");
+    loadCookies();
+  } else {
+    console.error("loadCookies function not found");
+    // Fallback to direct scan
+    if (typeof scanCurrentSiteCookies === "function") {
+      console.log("Scanning cookies directly...");
+      scanCurrentSiteCookies();
+    }
+  }
+  
+  // Set up event listeners
+  if (refreshButton) {
+    refreshButton.addEventListener("click", function() {
+      console.log("Refresh button clicked");
+      if (typeof scanCurrentSiteCookies === "function") {
+        scanCurrentSiteCookies();
+      }
+    });
+  }
+  
+  if (searchBox) {
+    searchBox.addEventListener("input", function() {
+      if (typeof debounce === "function" && typeof renderCookies === "function") {
+        debounce(function() {
+          renderCookies(searchBox.value);
+        }, 300)();
+      } else {
+        console.error("debounce or renderCookies function not found");
+      }
+    });
+  }
+  
+  if (themeToggle) {
+    themeToggle.addEventListener("click", function() {
+      if (typeof toggleTheme === "function") {
+        toggleTheme();
+      } else {
+        console.error("toggleTheme function not found");
+      }
+    });
+  }
+  
+  // Set up tab navigation
+  document.querySelectorAll(".category-tab").forEach(tab => {
+    tab.addEventListener("click", function() {
+      // Get current active tab
+      const currentActiveTab = document.querySelector(".category-tab.active");
+      const currentActiveContent = document.querySelector(".tab-content.active");
+      
+      // Get clicked tab and corresponding content
+      const clickedTabId = this.getAttribute("data-tab");
+      const clickedContent = document.getElementById(clickedTabId);
+      
+      // Remove active class from current tab/content
+      if (currentActiveTab) currentActiveTab.classList.remove("active");
+      if (currentActiveContent) currentActiveContent.classList.remove("active");
+      
+      // Add active class to clicked tab/content
+      this.classList.add("active");
+      if (clickedContent) clickedContent.classList.add("active");
+      
+      // If Charts tab is clicked, render charts
+      if (clickedTabId === "chartsTab" && typeof renderCharts === "function") {
+        renderCharts();
+      }
+    });
+  });
+});
+
+// Add implementation of setupCategoryToggles function
+function setupCategoryToggles() {
+  console.log("Setting up category toggles");
+  
+  // Get all category headers
+  const categoryHeaders = document.querySelectorAll(".category-header");
+  
+  // Add click event to toggle category content
+  categoryHeaders.forEach(header => {
+    header.addEventListener("click", function() {
+      const cookiesContainer = this.parentNode.querySelector(".category-cookies");
+      if (cookiesContainer) {
+        cookiesContainer.classList.toggle("open");
+      }
+    });
+  });
+}

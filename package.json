@@ -1,0 +1,13 @@
+{
+  "name": "cookie-organizer-extension",
+  "version": "1.0.0",
+  "description": "Chrome extension to display and manage browser cookies",
+  "private": true,
+  "scripts": {
+    "lint": "eslint background.js popup.js",
+    "zip": "mkdir -p dist && zip -r dist/cookie_organizer.zip manifest.json background.js popup.html popup.js icons/*.png"
+  },
+  "devDependencies": {
+    "eslint": "^8.47.0"
+  }
+} 
