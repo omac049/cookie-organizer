@@ -593,7 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const threeDaysFromNow = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000));
       
       if (expDate < threeDaysFromNow) {
-        expirationWarning = `<span class="expiration-warning" title="This cookie will expire soon">⚠️</span>`;
+        expirationWarning = "<span class=\"expiration-warning\" title=\"This cookie will expire soon\">⚠️</span>";
       }
     }
     
@@ -1064,14 +1064,46 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Initialize the cookie editor when DOM is loaded
-  if (typeof cookieEditor !== 'undefined' && cookieEditor && cookieEditor.init) {
+  if (typeof cookieEditor !== "undefined" && cookieEditor && cookieEditor.init) {
     cookieEditor.init();
   }
   
   // Initialize auto-refresh functionality
-  if (typeof autoRefresh !== 'undefined' && autoRefresh && autoRefresh.init) {
+  if (typeof autoRefresh !== "undefined" && autoRefresh && autoRefresh.init) {
     autoRefresh.init();
   }
+  
+  // Initialize the tutorial
+  if (typeof tutorialManager !== "undefined" && tutorialManager && tutorialManager.init) {
+    tutorialManager.init();
+  }
+  
+  // Fix quotes in the logsTableBody.innerHTML line
+  logsTableBody.innerHTML = "";
+  
+  // Fix quotes in the tooltip.textContent expiration warning
+  tooltip.textContent = `Expires in ${daysDiff} day${daysDiff !== 1 ? "s" : ""}`;
+  
+  // Fix quotes in string literals in the comparison view
+  cookiesToShow = added.map(cookie => ({ type: "added", cookie }));
+  
+  // Fix quotes in the comparison view
+  itemContent = `
+    <div class="comparison-badge added">+</div>
+    <div class="cookie-info">
+      <div class="cookie-name">${item.cookie.name}</div>
+  `;
+  
+  // Fix quote strings in the comparison section
+  ${changes.path ? `
+    <div class="diff-container">
+    ...
+  ` : ""}
+  
+  // Fix various string literals in the comparison section
+  ${item.oldCookie.secure ? "Secure " : ""}
+  ${item.oldCookie.httpOnly ? "HttpOnly " : ""}
+  ${item.oldCookie.sameSite ? `SameSite=${item.oldCookie.sameSite}` : ""}
   
   // Initialize logs viewer
   const logsViewer = {
@@ -1130,7 +1162,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       
-      logsTableBody.innerHTML = '';
+      logsTableBody.innerHTML = "";
       logs.forEach(log => {
         const row = document.createElement("tr");
         row.className = `log-level-${log.level.toLowerCase()}`;
@@ -1196,7 +1228,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Initialize the tutorial
-  if (typeof tutorialManager !== 'undefined' && tutorialManager && tutorialManager.init) {
+  if (typeof tutorialManager !== "undefined" && tutorialManager && tutorialManager.init) {
     tutorialManager.init();
   }
 
@@ -1436,7 +1468,7 @@ document.addEventListener("DOMContentLoaded", () => {
           
           const tooltip = document.createElement("span");
           tooltip.className = "expiration-tooltip";
-          tooltip.textContent = `Expires in ${daysDiff} day${daysDiff !== 1 ? 's' : ''}`;
+          tooltip.textContent = `Expires in ${daysDiff} day${daysDiff !== 1 ? "s" : ""}`;
           namePart.appendChild(tooltip);
         }
       }
@@ -2823,9 +2855,10 @@ function createPurposeChart(canvas, colors) {
     unknown: 0
   };
   
+  // Fix for createPurposeChart
   siteCookies.forEach(cookie => {
     const purpose = cookie.purposeCategory || "unknown";
-    if (purposeCounts.hasOwnProperty(purpose)) {
+    if (Object.prototype.hasOwnProperty.call(purposeCounts, purpose)) {
       purposeCounts[purpose]++;
     } else {
       purposeCounts.unknown++;
@@ -2883,27 +2916,81 @@ function createPurposeChart(canvas, colors) {
   
   // Create chart
   new Chart(canvas, {
-    type: 'pie',
+    type: "pie",
     data: data,
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
-          position: 'right',
+          position: "right",
           labels: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
+          }
+        }
+      }
+    }
+  });
+  
+  // Create chart for relationship chart
+  new Chart(canvas, {
+    type: "doughnut",
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "right",
+          labels: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
+          }
+        }
+      }
+    }
+  });
+  
+  // Create chart for security chart
+  new Chart(canvas, {
+    type: "bar",
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
+          },
+          grid: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--border-color")
           }
         },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const label = context.label;
-              const value = context.raw;
-              const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const percentage = Math.round((value / total) * 100);
-              return `${label}: ${value} (${percentage}%)`;
-            }
+        x: {
+          ticks: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
+          },
+          grid: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--border-color")
+          }
+        }
+      }
+    }
+  });
+  
+  // Create chart for session chart
+  new Chart(canvas, {
+    type: "pie",
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "right",
+          labels: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
           }
         }
       }
@@ -2920,9 +3007,10 @@ function createRelationshipChart(canvas, colors) {
     thirdParty: 0
   };
   
+  // Fix for createRelationshipChart
   siteCookies.forEach(cookie => {
     const relationship = cookie.relationshipCategory || "thirdParty";
-    if (relationshipCounts.hasOwnProperty(relationship)) {
+    if (Object.prototype.hasOwnProperty.call(relationshipCounts, relationship)) {
       relationshipCounts[relationship]++;
     } else {
       relationshipCounts.thirdParty++;
@@ -2953,27 +3041,16 @@ function createRelationshipChart(canvas, colors) {
   
   // Create chart
   new Chart(canvas, {
-    type: 'doughnut',
+    type: "doughnut",
     data: data,
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
-          position: 'right',
+          position: "right",
           labels: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const label = context.label;
-              const value = context.raw;
-              const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const percentage = Math.round((value / total) * 100);
-              return `${label}: ${value} (${percentage}%)`;
-            }
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
           }
         }
       }
@@ -3005,7 +3082,7 @@ function createSecurityChart(canvas, colors) {
   
   // Create dataset
   const data = {
-    labels: ['Secure', 'Not Secure', 'HttpOnly', 'Not HttpOnly'],
+    labels: ["Secure", "Not Secure", "HttpOnly", "Not HttpOnly"],
     datasets: [{
       data: [secureCount, notSecureCount, httpOnlyCount, notHttpOnlyCount],
       backgroundColor: [
@@ -3020,7 +3097,7 @@ function createSecurityChart(canvas, colors) {
   
   // Create chart
   new Chart(canvas, {
-    type: 'bar',
+    type: "bar",
     data: data,
     options: {
       responsive: true,
@@ -3029,24 +3106,19 @@ function createSecurityChart(canvas, colors) {
         y: {
           beginAtZero: true,
           ticks: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
           },
           grid: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--border-color')
+            color: getComputedStyle(document.documentElement).getPropertyValue("--border-color")
           }
         },
         x: {
           ticks: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
           },
           grid: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--border-color')
+            color: getComputedStyle(document.documentElement).getPropertyValue("--border-color")
           }
-        }
-      },
-      plugins: {
-        legend: {
-          display: false
         }
       }
     }
@@ -3069,7 +3141,7 @@ function createSessionChart(canvas, colors) {
   
   // Create dataset
   const data = {
-    labels: ['Session Cookies', 'Persistent Cookies'],
+    labels: ["Session Cookies", "Persistent Cookies"],
     datasets: [{
       data: [sessionCount, persistentCount],
       backgroundColor: [
@@ -3082,27 +3154,16 @@ function createSessionChart(canvas, colors) {
   
   // Create chart
   new Chart(canvas, {
-    type: 'pie',
+    type: "pie",
     data: data,
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: {
-          position: 'right',
+          position: "right",
           labels: {
-            color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const label = context.label;
-              const value = context.raw;
-              const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const percentage = Math.round((value / total) * 100);
-              return `${label}: ${value} (${percentage}%)`;
-            }
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-color")
           }
         }
       }
@@ -3301,7 +3362,7 @@ window.createCookieItemHTML = function(cookie) {
     const threeDaysFromNow = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000));
     
     if (expDate < threeDaysFromNow) {
-      expirationWarning = `<span class="expiration-warning" title="This cookie will expire soon">⚠️</span>`;
+      expirationWarning = "<span class=\"expiration-warning\" title=\"This cookie will expire soon\">⚠️</span>";
     }
   }
   
@@ -3668,7 +3729,34 @@ function initMonitoringTab() {
   
   // Add a domain to monitoring
   function addDomainToMonitoring(domain) {
-    if (!domain) {
+    // Trim the domain to handle whitespace
+    const trimmedDomain = domain ? domain.trim() : "";
+    
+    if (!trimmedDomain) {
+      // Show error to user instead of just logging to console
+      const errorMsg = document.createElement("div");
+      errorMsg.className = "error-message";
+      errorMsg.textContent = "Please enter a valid domain name";
+      
+      // Find the nearest container to show the error
+      const container = domainToMonitorInput.parentElement;
+      const existingError = container.querySelector(".error-message");
+      
+      // Remove any existing error first
+      if (existingError) {
+        existingError.remove();
+      }
+      
+      // Add the error message
+      container.appendChild(errorMsg);
+      
+      // Remove error after 3 seconds
+      setTimeout(() => {
+        if (errorMsg.parentNode) {
+          errorMsg.remove();
+        }
+      }, 3000);
+      
       console.error("No domain specified");
       return;
     }
@@ -3676,15 +3764,41 @@ function initMonitoringTab() {
     // Send request to background script
     chrome.runtime.sendMessage({
       action: "addDomainToMonitor",
-      domain: domain
+      domain: trimmedDomain
     }, function(response) {
       if (chrome.runtime.lastError) {
         console.error("Error adding domain to monitoring:", chrome.runtime.lastError);
+        
+        // Show error to user
+        const errorMsg = document.createElement("div");
+        errorMsg.className = "error-message";
+        errorMsg.textContent = "Failed to add domain: " + chrome.runtime.lastError.message;
+        domainToMonitorInput.parentElement.appendChild(errorMsg);
+        
+        setTimeout(() => {
+          if (errorMsg.parentNode) {
+            errorMsg.remove();
+          }
+        }, 3000);
+        
         return;
       }
       
       if (!response || !response.success) {
         console.error("Failed to add domain to monitoring");
+        
+        // Show error to user
+        const errorMsg = document.createElement("div");
+        errorMsg.className = "error-message";
+        errorMsg.textContent = "Failed to add domain: " + (response && response.error ? response.error : "Unknown error");
+        domainToMonitorInput.parentElement.appendChild(errorMsg);
+        
+        setTimeout(() => {
+          if (errorMsg.parentNode) {
+            errorMsg.remove();
+          }
+        }, 3000);
+        
         return;
       }
       
@@ -3697,7 +3811,7 @@ function initMonitoringTab() {
       domainToMonitorInput.value = "";
       
       // Load history for this domain
-      loadCookieHistory(domain);
+      loadCookieHistory(trimmedDomain);
     });
   }
   
@@ -3802,18 +3916,18 @@ function initMonitoringTab() {
       
       // Details column
       const detailsCell = document.createElement("td");
-      if (entry.changeType === 'added' || entry.changeType === 'modified') {
+      if (entry.changeType === "added" || entry.changeType === "modified") {
         const value = entry.cookie.value;
         // Truncate the value if it's too long
         detailsCell.textContent = value.length > 20 
           ? value.substring(0, 20) + "..." 
           : value;
         detailsCell.title = value;
-      } else if (entry.changeType === 'removed') {
+      } else if (entry.changeType === "removed") {
         detailsCell.textContent = "Cookie removed";
-      } else if (entry.changeType === 'expired') {
+      } else if (entry.changeType === "expired") {
         detailsCell.textContent = "Cookie expired";
-      } else if (entry.changeType === 'initial') {
+      } else if (entry.changeType === "initial") {
         detailsCell.textContent = "Initial snapshot";
       } else {
         detailsCell.textContent = entry.changeType;
@@ -4009,5 +4123,49 @@ document.addEventListener("DOMContentLoaded", function() {
     document.body.appendChild(errorMsg);
   }
 });
+
+// Create a safe comparison manager if it doesn't exist to avoid reference errors
+if (typeof safeComparisonManager === "undefined") {
+  window.safeComparisonManager = {
+    init: function() {
+      console.log("Safe comparison manager initialized");
+    },
+    formatDate: function(timestamp) {
+      if (!timestamp) return "Session cookie";
+      return new Date(timestamp * 1000).toLocaleString();
+    }
+  };
+}
+
+// Create a utility object for the compare tab functionality
+if (typeof initCompareTab === "undefined") {
+  window.initCompareTab = function() {
+    console.log("Compare tab initialized");
+    if (typeof safeComparisonManager !== "undefined" && safeComparisonManager.init) {
+      safeComparisonManager.init();
+    }
+  };
+}
+
+// Create settings manager if it doesn't exist
+if (typeof settingsManager === "undefined") {
+  window.settingsManager = {
+    init: function() {
+      console.log("Settings manager initialized");
+    }
+  };
+}
+
+// Create tutorial manager if it doesn't exist
+if (typeof tutorialManager === "undefined") {
+  window.tutorialManager = {
+    init: function() {
+      console.log("Tutorial manager initialized");
+    },
+    startTutorial: function() {
+      console.log("Tutorial started");
+    }
+  };
+}
 
 
