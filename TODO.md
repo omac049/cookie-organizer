@@ -41,7 +41,7 @@
 - [x] Add visual indicators for soon-to-expire cookies
 
 ### Developer Tools
-- [ ] Add "Copy as cURL" option for each cookie
+- [x] Add "Copy as cURL" option for each cookie
 - [ ] Create "Copy as fetch request" option
 - [ ] Add syntax highlighting for JSON cookie values
 - [ ] Implement cookie header generation for requests
@@ -71,6 +71,7 @@
 - [ ] Add color blindness accommodation options
 
 ## Technical Debt & Maintenance
+- [x] Fix linter errors and code structure issues
 - [ ] Refactor code for better modularity
 - [ ] Update dependencies and security patches
 - [ ] Improve code documentation

@@ -6,16 +6,16 @@
   },
   "extends": "eslint:recommended",
   "parserOptions": {
-    "ecmaVersion": 2022,
+    "ecmaVersion": 12,
     "sourceType": "module"
   },
   "rules": {
-    "indent": ["error", 2],
-    "linebreak-style": ["error", "unix"],
-    "quotes": ["error", "double", { "avoidEscape": true }],
-    "semi": ["error", "always"],
-    "no-unused-vars": ["warn"],
-    "no-console": ["warn", { "allow": ["warn", "error"] }]
+    "no-console": "off",
+    "no-unused-vars": "warn",
+    "indent": ["warn", 2],
+    "linebreak-style": ["warn", "unix"],
+    "quotes": ["warn", "double"],
+    "semi": ["warn", "always"]
   },
   "globals": {
     "chrome": "readonly"

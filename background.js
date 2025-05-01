@@ -36,7 +36,7 @@ const Logger = {
   maxLogs: 1000,
   
   // Storage key for logs
-  storageKey: 'cookie_organizer_logs',
+  storageKey: "cookie_organizer_logs",
   
   // Log storage
   logs: [],
@@ -44,7 +44,7 @@ const Logger = {
   // Initialize logger
   init: function() {
     // Load current log level from storage
-    chrome.storage.local.get(['logLevel', this.storageKey], (result) => {
+    chrome.storage.local.get(["logLevel", this.storageKey], (result) => {
       if (result.logLevel !== undefined) {
         this.currentLevel = result.logLevel;
       }
@@ -54,17 +54,17 @@ const Logger = {
         this.logs = result[this.storageKey];
       }
       
-      this.info('Logger initialized with level:', this.getLevelName(this.currentLevel));
+      this.info("Logger initialized with level:", this.getLevelName(this.currentLevel));
     });
     
     // Listen for log level changes
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.action === 'setLogLevel') {
+      if (message.action === "setLogLevel") {
         this.setLevel(message.level);
         sendResponse({ success: true });
-      } else if (message.action === 'getLogs') {
+      } else if (message.action === "getLogs") {
         sendResponse({ success: true, logs: this.logs });
-      } else if (message.action === 'clearLogs') {
+      } else if (message.action === "clearLogs") {
         this.clearLogs();
         sendResponse({ success: true });
       }
@@ -73,7 +73,7 @@ const Logger = {
   
   // Set log level
   setLevel: function(level) {
-    if (typeof level === 'string') {
+    if (typeof level === "string") {
       // Convert string level to number
       level = this.LEVELS[level.toUpperCase()] || this.LEVELS.INFO;
     }
@@ -83,7 +83,7 @@ const Logger = {
     // Save to storage
     chrome.storage.local.set({ logLevel: level });
     
-    this.info('Log level set to:', this.getLevelName(level));
+    this.info("Log level set to:", this.getLevelName(level));
   },
   
   // Get level name from numeric value
@@ -91,7 +91,7 @@ const Logger = {
     for (const [name, value] of Object.entries(this.LEVELS)) {
       if (value === level) return name;
     }
-    return 'UNKNOWN';
+    return "UNKNOWN";
   },
   
   // Add timestamp to log
@@ -114,14 +114,14 @@ const Logger = {
   clearLogs: function() {
     this.logs = [];
     chrome.storage.local.remove(this.storageKey);
-    this.info('Logs cleared');
+    this.info("Logs cleared");
   },
   
   // Format log message
   formatLog: function(level, args) {
     const timestamp = this.timestamp();
     const messages = Array.from(args).map(arg => {
-      if (typeof arg === 'object') {
+      if (typeof arg === "object") {
         try {
           return JSON.stringify(arg);
         } catch (e) {
@@ -134,7 +134,7 @@ const Logger = {
     return {
       timestamp,
       level: this.getLevelName(level),
-      message: messages.join(' ')
+      message: messages.join(" ")
     };
   },
   
@@ -184,10 +184,10 @@ Logger.init();
 const CookieMonitor = {
   // Storage keys
   STORAGE_KEYS: {
-    MONITORING_ENABLED: 'cookie_monitoring_enabled',
-    MONITORED_DOMAINS: 'cookie_monitored_domains',
-    COOKIE_HISTORY: 'cookie_history',
-    NOTIFICATION_SETTINGS: 'cookie_notification_settings',
+    MONITORING_ENABLED: "cookie_monitoring_enabled",
+    MONITORED_DOMAINS: "cookie_monitored_domains",
+    COOKIE_HISTORY: "cookie_history",
+    NOTIFICATION_SETTINGS: "cookie_notification_settings",
   },
   
   // Default settings
@@ -211,7 +211,7 @@ const CookieMonitor = {
   
   // Initialize the cookie monitor
   init: function() {
-    Logger.info('Initializing Cookie Monitor');
+    Logger.info("Initializing Cookie Monitor");
     this.loadSettings();
     
     // Set up event listeners for cookie changes
@@ -219,7 +219,7 @@ const CookieMonitor = {
     
     // Listen for messages from the popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.action === 'getCookieMonitorStatus') {
+      if (message.action === "getCookieMonitorStatus") {
         sendResponse({
           success: true,
           enabled: this.settings.enabled,
@@ -229,13 +229,13 @@ const CookieMonitor = {
         return true;
       }
       
-      if (message.action === 'toggleCookieMonitoring') {
+      if (message.action === "toggleCookieMonitoring") {
         this.toggleMonitoring(message.enabled);
         sendResponse({ success: true, enabled: this.settings.enabled });
         return true;
       }
       
-      if (message.action === 'addDomainToMonitor') {
+      if (message.action === "addDomainToMonitor") {
         this.addDomainToMonitor(message.domain);
         sendResponse({ 
           success: true, 
@@ -244,7 +244,7 @@ const CookieMonitor = {
         return true;
       }
       
-      if (message.action === 'removeDomainFromMonitor') {
+      if (message.action === "removeDomainFromMonitor") {
         this.removeDomainFromMonitor(message.domain);
         sendResponse({ 
           success: true, 
@@ -253,7 +253,7 @@ const CookieMonitor = {
         return true;
       }
       
-      if (message.action === 'getCookieHistory') {
+      if (message.action === "getCookieHistory") {
         sendResponse({
           success: true,
           history: this.getCookieHistory(message.domain)
@@ -261,13 +261,13 @@ const CookieMonitor = {
         return true;
       }
       
-      if (message.action === 'updateMonitorSettings') {
+      if (message.action === "updateMonitorSettings") {
         this.updateSettings(message.settings);
         sendResponse({ success: true, settings: this.settings });
         return true;
       }
       
-      if (message.action === 'clearCookieHistory') {
+      if (message.action === "clearCookieHistory") {
         this.clearCookieHistory(message.domain);
         sendResponse({ success: true });
         return true;
@@ -306,8 +306,8 @@ const CookieMonitor = {
       // Set cookie history
       this.cookieHistory = result[this.STORAGE_KEYS.COOKIE_HISTORY] || {};
       
-      Logger.info('Cookie Monitor settings loaded:', this.settings);
-      Logger.info('Monitored domains:', this.monitoredDomains.length);
+      Logger.info("Cookie Monitor settings loaded:", this.settings);
+      Logger.info("Monitored domains:", this.monitoredDomains.length);
     });
   },
   
@@ -320,7 +320,7 @@ const CookieMonitor = {
     };
     
     chrome.storage.local.set(dataToSave, () => {
-      Logger.info('Cookie Monitor settings saved');
+      Logger.info("Cookie Monitor settings saved");
     });
   },
   
@@ -329,7 +329,7 @@ const CookieMonitor = {
     chrome.storage.local.set({
       [this.STORAGE_KEYS.COOKIE_HISTORY]: this.cookieHistory
     }, () => {
-      Logger.debug('Cookie history saved');
+      Logger.debug("Cookie history saved");
     });
   },
   
@@ -337,11 +337,11 @@ const CookieMonitor = {
   toggleMonitoring: function(enabled) {
     this.settings.enabled = enabled !== undefined ? enabled : !this.settings.enabled;
     this.saveSettings();
-    Logger.info('Cookie monitoring ' + (this.settings.enabled ? 'enabled' : 'disabled'));
+    Logger.info("Cookie monitoring " + (this.settings.enabled ? "enabled" : "disabled"));
     
     // Notify the popup if it's open
     chrome.runtime.sendMessage({
-      action: 'cookieMonitoringToggled',
+      action: "cookieMonitoringToggled",
       enabled: this.settings.enabled
     }).catch(() => {
       // Ignore errors if popup is not open
@@ -352,7 +352,7 @@ const CookieMonitor = {
   updateSettings: function(newSettings) {
     this.settings = Object.assign(this.settings, newSettings);
     this.saveSettings();
-    Logger.info('Cookie Monitor settings updated:', this.settings);
+    Logger.info("Cookie Monitor settings updated:", this.settings);
   },
   
   // Add a domain to monitor
@@ -364,13 +364,13 @@ const CookieMonitor = {
     
     // Check if domain is already being monitored
     if (this.monitoredDomains.includes(baseDomain)) {
-      Logger.info('Domain already being monitored:', baseDomain);
+      Logger.info("Domain already being monitored:", baseDomain);
       return false;
     }
     
     // Check if we've reached the maximum number of domains to monitor
     if (this.monitoredDomains.length >= this.settings.maxDomainsToMonitor) {
-      Logger.warn('Maximum number of monitored domains reached');
+      Logger.warn("Maximum number of monitored domains reached");
       return false;
     }
     
@@ -388,7 +388,7 @@ const CookieMonitor = {
     // Save changes
     this.saveSettings();
     
-    Logger.info('Domain added to monitoring:', baseDomain);
+    Logger.info("Domain added to monitoring:", baseDomain);
     return true;
   },
   
@@ -400,7 +400,7 @@ const CookieMonitor = {
     const index = this.monitoredDomains.indexOf(baseDomain);
     
     if (index === -1) {
-      Logger.info('Domain not being monitored:', baseDomain);
+      Logger.info("Domain not being monitored:", baseDomain);
       return false;
     }
     
@@ -410,7 +410,7 @@ const CookieMonitor = {
     // Save changes
     this.saveSettings();
     
-    Logger.info('Domain removed from monitoring:', baseDomain);
+    Logger.info("Domain removed from monitoring:", baseDomain);
     return true;
   },
   
@@ -423,12 +423,12 @@ const CookieMonitor = {
       
       // Store initial state without generating events
       cookies.forEach(cookie => {
-        this.storeCookieState(cookie, 'initial', false);
+        this.storeCookieState(cookie, "initial", false);
       });
       
-      Logger.info('Took snapshot of', cookies.length, 'cookies for', domain);
+      Logger.info("Took snapshot of", cookies.length, "cookies for", domain);
     } catch (error) {
-      Logger.error('Error taking cookie snapshot:', error);
+      Logger.error("Error taking cookie snapshot:", error);
     }
   },
   
@@ -440,7 +440,7 @@ const CookieMonitor = {
     const { cookie, removed, cause } = changeInfo;
     
     // Get base domain of the cookie
-    const domain = cookie.domain.startsWith('.') 
+    const domain = cookie.domain.startsWith(".") 
       ? cookie.domain.substring(1) 
       : cookie.domain;
     
@@ -454,18 +454,18 @@ const CookieMonitor = {
     // Determine the change type
     let changeType;
     if (removed) {
-      changeType = 'removed';
-    } else if (cause === 'explicit' || cause === 'overwrite') {
+      changeType = "removed";
+    } else if (cause === "explicit" || cause === "overwrite") {
       // Check if this is a new cookie or a modification
       const existingCookies = this.cookieHistory[baseDomain] || [];
       const existingCookie = existingCookies.find(c => 
         c.cookie.name === cookie.name && 
         c.cookie.path === cookie.path &&
         c.cookie.domain === cookie.domain &&
-        c.changeType !== 'removed'
+        c.changeType !== "removed"
       );
       
-      changeType = existingCookie ? 'modified' : 'added';
+      changeType = existingCookie ? "modified" : "added";
     } else {
       // Other causes like 'expired', 'evicted', etc.
       changeType = cause;
@@ -475,18 +475,18 @@ const CookieMonitor = {
     this.storeCookieState(cookie, changeType);
     
     // Notify if appropriate
-    if ((changeType === 'added' && this.settings.notifyOnAdd) ||
-        (changeType === 'modified' && this.settings.notifyOnModify) ||
-        (changeType === 'removed' && this.settings.notifyOnRemove)) {
+    if ((changeType === "added" && this.settings.notifyOnAdd) ||
+        (changeType === "modified" && this.settings.notifyOnModify) ||
+        (changeType === "removed" && this.settings.notifyOnRemove)) {
       this.notifyCookieChange(cookie, changeType, baseDomain);
     }
     
-    Logger.info('Cookie change detected:', cookie.name, changeType, 'on', baseDomain);
+    Logger.info("Cookie change detected:", cookie.name, changeType, "on", baseDomain);
   },
   
   // Store cookie state change in history
   storeCookieState: function(cookie, changeType, shouldNotify = true) {
-    const domain = cookie.domain.startsWith('.') 
+    const domain = cookie.domain.startsWith(".") 
       ? cookie.domain.substring(1) 
       : cookie.domain;
     
@@ -517,7 +517,7 @@ const CookieMonitor = {
     // Notify popup if it's open
     if (shouldNotify) {
       chrome.runtime.sendMessage({
-        action: 'cookieHistoryUpdated',
+        action: "cookieHistoryUpdated",
         domain: baseDomain,
         history: this.cookieHistory[baseDomain]
       }).catch(() => {
@@ -531,30 +531,30 @@ const CookieMonitor = {
     let title, message;
     
     switch (changeType) {
-      case 'added':
-        title = 'Cookie Added';
-        message = `New cookie "${cookie.name}" added on ${domain}`;
-        break;
-      case 'modified':
-        title = 'Cookie Modified';
-        message = `Cookie "${cookie.name}" modified on ${domain}`;
-        break;
-      case 'removed':
-        title = 'Cookie Removed';
-        message = `Cookie "${cookie.name}" removed from ${domain}`;
-        break;
-      default:
-        title = 'Cookie Changed';
-        message = `Cookie "${cookie.name}" change (${changeType}) on ${domain}`;
+    case "added":
+      title = "Cookie Added";
+      message = `New cookie "${cookie.name}" added on ${domain}`;
+      break;
+    case "modified":
+      title = "Cookie Modified";
+      message = `Cookie "${cookie.name}" modified on ${domain}`;
+      break;
+    case "removed":
+      title = "Cookie Removed";
+      message = `Cookie "${cookie.name}" removed from ${domain}`;
+      break;
+    default:
+      title = "Cookie Changed";
+      message = `Cookie "${cookie.name}" change (${changeType}) on ${domain}`;
     }
     
     // Create a notification
     chrome.notifications.create({
-      type: 'basic',
-      iconUrl: '/icons/48.png',
+      type: "basic",
+      iconUrl: "/icons/48.png",
       title,
       message,
-      contextMessage: 'Cookie Organizer'
+      contextMessage: "Cookie Organizer"
     });
   },
   
@@ -579,7 +579,7 @@ const CookieMonitor = {
     
     // Save changes
     this.saveCookieHistory();
-    Logger.info('Cookie history cleared for:', domain || 'all domains');
+    Logger.info("Cookie history cleared for:", domain || "all domains");
   }
 };
 
@@ -633,7 +633,7 @@ function getBaseDomain(urlOrDomain) {
   // Check for known multi-part TLDs
   for (const tld of multipartTlds) {
     if (hostname.endsWith("." + tld)) {
-      const tldParts = tld.split('.');
+      const tldParts = tld.split(".");
       const requiredParts = tldParts.length + 1; // +1 for the domain name
       if (parts.length >= requiredParts) {
         return parts.slice(-(requiredParts)).join(".");
@@ -671,19 +671,19 @@ function isDomainRelated(cookieDomain, siteDomain) {
   }
   
   // Cookie domain is a parent domain of site domain
-  if (cleanSiteDomain.endsWith('.' + cleanCookieDomain)) {
+  if (cleanSiteDomain.endsWith("." + cleanCookieDomain)) {
     return true;
   }
   
   // Site domain is a parent domain of cookie domain
-  if (cleanCookieDomain.endsWith('.' + cleanSiteDomain)) {
+  if (cleanCookieDomain.endsWith("." + cleanSiteDomain)) {
     return true;
   }
   
   // Check for common domains in cookie storage sharing 
   // (Some companies share cookies across their different domains)
-  const cookieBaseParts = cookieBaseDomain.split('.');
-  const siteBaseParts = siteBaseDomain.split('.');
+  const cookieBaseParts = cookieBaseDomain.split(".");
+  const siteBaseParts = siteBaseDomain.split(".");
   
   // If both domains have the same name part but different TLDs
   // e.g., example.com and example.org
@@ -692,11 +692,11 @@ function isDomainRelated(cookieDomain, siteDomain) {
     
     // Only consider this a match for well-known companies that use multiple TLDs
     const commonBrands = ["google", "microsoft", "apple", "amazon", "facebook", "twitter", 
-                          "linkedin", "adobe", "github", "salesforce", "shopify", "paypal", 
-                          "stripe", "dropbox", "zoom", "netflix"];
+      "linkedin", "adobe", "github", "salesforce", "shopify", "paypal", 
+      "stripe", "dropbox", "zoom", "netflix"];
     
     if (commonBrands.some(brand => 
-        cookieBaseParts[cookieBaseParts.length - 2].includes(brand) || 
+      cookieBaseParts[cookieBaseParts.length - 2].includes(brand) || 
         siteBaseParts[siteBaseParts.length - 2].includes(brand))) {
       return true;
     }
@@ -1107,11 +1107,11 @@ async function organizeSiteCookies(siteUrl) {
       }
       
       // For educational domains, add special handling
-      if (domain.endsWith('.edu')) {
+      if (domain.endsWith(".edu")) {
         try {
           const eduCookies = await getAllCookies({});
           const filteredEduCookies = eduCookies.filter(cookie => 
-            cookie.domain.endsWith('.edu') || 
+            cookie.domain.endsWith(".edu") || 
             cookie.domain.includes(baseDomain)
           );
           console.log(`Found ${filteredEduCookies.length} additional .edu-related cookies`);
@@ -1459,7 +1459,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (cookie.domain === domain || cookie.domain === `.${domain}`) {
             cookie.relationshipCategory = "primary";
             cookiesByRelationship.primary.push(cookie);
-          } else if (cookie.domain.endsWith(`.${domain}`) || domain.endsWith(`.${cookie.domain.replace(/^\./, '')}`)) {
+          } else if (cookie.domain.endsWith(`.${domain}`) || domain.endsWith(`.${cookie.domain.replace(/^\./, "")}`)) {
             cookie.relationshipCategory = "secondary";
             cookiesByRelationship.secondary.push(cookie);
           } else {
@@ -1511,42 +1511,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     // Handle different actions
     switch(message.action) {
-      case "scanCurrentSiteCookies":
-        // Scan cookies for current tab
-        scanActiveTabCookies(message, sendResponse);
-        return true; // Indicates we'll respond asynchronously
+    case "scanCurrentSiteCookies":
+      // Scan cookies for current tab
+      scanActiveTabCookies(message, sendResponse);
+      return true; // Indicates we'll respond asynchronously
         
-      case "deleteCookie":
-        // Delete a cookie
-        if (!message.cookie) {
-          sendResponse({ success: false, error: "No cookie data provided" });
-          return false;
-        }
-        deleteCookie(message.cookie, message.siteUrl, sendResponse);
-        return true; // Indicates we'll respond asynchronously
-        
-      case "updateCookie":
-        // Update a cookie
-        if (!message.cookieData) {
-          sendResponse({ success: false, error: "No cookie data provided" });
-          return false;
-        }
-        updateCookie(message.cookieData, message.siteUrl, sendResponse);
-        return true; // Indicates we'll respond asynchronously
-        
-      case "refreshCookieData":
-        // Refresh cookie data
-        if (!message.siteUrl) {
-          sendResponse({ success: false, error: "No site URL provided" });
-          return false;
-        }
-        refreshCookieData(message.siteUrl, sendResponse);
-        return true; // Indicates we'll respond asynchronously
-        
-      default:
-        // Unknown action
-        sendResponse({ success: false, error: `Unknown action: ${message.action}` });
+    case "deleteCookie":
+      // Delete a cookie
+      if (!message.cookie) {
+        sendResponse({ success: false, error: "No cookie data provided" });
         return false;
+      }
+      deleteCookie(message.cookie, message.siteUrl, sendResponse);
+      return true; // Indicates we'll respond asynchronously
+        
+    case "updateCookie":
+      // Update a cookie
+      if (!message.cookieData) {
+        sendResponse({ success: false, error: "No cookie data provided" });
+        return false;
+      }
+      updateCookie(message.cookieData, message.siteUrl, sendResponse);
+      return true; // Indicates we'll respond asynchronously
+        
+    case "refreshCookieData":
+      // Refresh cookie data
+      if (!message.siteUrl) {
+        sendResponse({ success: false, error: "No site URL provided" });
+        return false;
+      }
+      refreshCookieData(message.siteUrl, sendResponse);
+      return true; // Indicates we'll respond asynchronously
+        
+    default:
+      // Unknown action
+      sendResponse({ success: false, error: `Unknown action: ${message.action}` });
+      return false;
     }
   } catch (error) {
     console.error(`Error handling action ${message.action}:`, error);
