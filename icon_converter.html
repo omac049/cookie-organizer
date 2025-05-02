@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Cookie Icon Generator</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .icon-preview {
+      margin: 20px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .icon {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border: 1px solid #ddd;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    button {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+  <h1>Cookie Icon Generator</h1>
+  <p>Below are your cookie icons. Right-click on each one and select "Save Image As..." to save them.</p>
+  
+  <div class="icon-preview">
+    <div class="icon">
+      <h3>16x16</h3>
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAABlklEQVQ4jZ2TP0vDQBTAfy3VQrVCLYIuDhYHsVPBUlwrOKiTm4KLX8HRL+BoF6EiiOCH0MEKglZBpEVsseKftvZPSHJ5Lg1tk9TEB8fj3r37vXv3TpRKpbPRaNQ/Ho+7DMNYns+Z5uLs3Nz1QdO0ZrVafe2OOvNZ27Y/LctaURRlGWAFYMEHDQaDHkACnFMICIVC8UKhEAsDCsViLJlMxryYNE03wzAaoZg9+GShUFhLpVKxaZAn0+m4aZotADEYDCJWs3m7ls+n6q3Wu6vvn4YtgMfylXMym5UT8biUy+UkQOZyOZnL5eRxOi0BspjNSsuy2oQQKMC9YRgkEolv4BOoAdVIJKLIskw8HmcECMMwUFUVwzA+AD5MgdxutxvtdrtSVdXubDa7CvC0vf0VjUZFJBJB13UGg0Gn1Wq9Ab5t4NkP4GZnZ3djczMTDoep1+vUajWq1eqDrutvQNcGvv0AgiRJwlnVUqlEuVx+1DTtBXDl/wY+MNPpdCoOjmM16h+YgE2AO0VRyOfzXWA/DAJYBbg6PDx8sG37B/gDi3Qpdo1K3FIAAAAASUVORK5CYII=" alt="16x16 Cookie Icon" id="icon16">
+      <button onclick="downloadImage('icon16', '16.png')">Download</button>
+    </div>
+    
+    <div class="icon">
+      <h3>32x32</h3>
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAAEkklEQVRYhb2XW2gcVRjHf2d2ZnZ3s5vdTbLZTbJJmtQmbRq11kZoLYpVCxVvIAq+KIgXEH3wUX3QB/FFH/RJL4KKKEVEBC1SqmixWIulKm1tkya3JilJ9pLdZHezszNzfHB2MpudnZ3MxP/LwJxzvv//N9/5vnMOopSSD6F0P1sRLfvoiutorRXsIQaRHCQQ/kk6/+2iOfbXYUmS+4uRnFWlzr6/BaHEcqKVN8qT3hEpCN0AEfr8uGw5RpMmwNNXDh54fO2b8VpAFy5c+PDs2XPRE70ncyAKF51//2MeNDZuX/Xk088+tJCfY7mHr/cceq77+LnvCfTOwLmFncnIBl5cX0PrymJFKxOaAM7v3eOvOXjwQM1CXlZw9B574fkX98zmjW3BRj41eP7o0SPPJZMfnBLxeMLy++uu2ZHwXRqaqrVzfT79efD48eOf+3y+j2bO1N3NTdYTjY2NDTbpwNdOnV4PfgN8q3j9Ao46XH3xxRdf+c2iC2zMQsxwVa7T1YfS6XQeeAxAiJKPYrvdeX+/3x+3oj9nHeD0ykAg4LE6RgZ4HEA0NTWpQwgQyqyGFvW7hf05JcAoFa+1NiIVQ0hKFPOBFjICuZXBKnAWBXCVTYxAXRBCpAlQu7Fqkqw4gMhQqQJI7TZRw1dxACF8KtVPpZKzmJQfwLjQXPWgklBxgIITlgjAE4lETQ4MmZpIJCqEhbhMCXg8vgpHIEw4HBaYXMgWYnIl4GvctnHbxq0bt/bX9qYXdRhZrgSyOcgHYZZPKYAFdbnP8QCME8xHoRmEWX9OAJelQOzs7PTt2LHjmUwmczIWi+WsrkVxu911Qgijc2V+kLwC1UJN09RXdSqU/dJqdVY1WT6frybMWyiNmDa8EJpmI3LdF0Z3mK51rXu3MsgyJyDBu8FI3qgF3hR5D3Ahs3Wd1LilgKZpLMMjPh+AXt9lT4DJbQnMGhf+O/l5AEZGRviw/0e/Jcv9J3Bdf2x0sPefPx8EyFoLzN4XRCnjOvGYlJKDBw9y5syZ09evX7/ncrm2CyFWz/TZuXPnA6lUan9/f/8GIUTtQvrKROTu3bu6w7rONE3JQvl5Y3p6evp6enq4fPlyDLDdVZbL5Sqn36ztaJbCyXCTuZPo6upaGw6H65RyE1iXI1IA+/btCxw6dGhDPB7/IBqNrgGQUqpznpnp0cxd6/vGyFUupYzoyYvFYiNnz579GlgPfKcnrvvUxhLQA4jR0dFV09PThEKhH4CbQNZuJRGvvXb03F9//52IxWJTBw4ceB9oAEKYvJUZnZXxeLz2yJEjibGxsZJSUEqRSqX+1O8rpQz94+PjKaXU+O3bt7/p6+ujp6cn5nK5YkDY7m3ZuKmUitqPn7Zt23Zj+/btQ01NTf0tLS3j8Xj8h87OTjo6Oh4FNgPfz/bNdnrVnj17PgL8c7Ue+HJ0dDTw1VdfdQLbgW+Bbzx60WXVQsWWQQnD3W63dLlcyjhSqZQKBALK4/Eo4Lp+p62t7TLwCPCLJQPz8z/rWunTpagdXQAAAABJRU5ErkJggg==" alt="32x32 Cookie Icon" id="icon32">
+      <button onclick="downloadImage('icon32', '32.png')">Download</button>
+    </div>
+    
+    <div class="icon">
+      <h3>48x48</h3>
+      <img src="data:image/png;base64,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" alt="48x48 Cookie Icon" id="icon48">
+      <button onclick="downloadImage('icon48', '48.png')">Download</button>
+    </div>
+    
+    <div class="icon">
+      <h3>128x128</h3>
+      <img src="data:image/png;base64,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" alt="128x128 Cookie Icon" id="icon128">
+      <button onclick="downloadImage('icon128', '128.png')">Download</button>
+    </div>
+  </div>
+
+  <script>
+    function downloadImage(imgId, fileName) {
+      const img = document.getElementById(imgId);
+      const a = document.createElement('a');
+      a.href = img.src;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  </script>
+</body>
+</html> 
