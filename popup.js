@@ -337,14 +337,23 @@ function addCopyButtonsToCookieValues() {
       const value = this.dataset.value;
       navigator.clipboard.writeText(value)
         .then(() => {
-          // Show success indicator
+          // Show success toast
+          showToast("Cookie value copied to clipboard", "success", 2000);
+          
+          // Show success indicator on button
           const originalText = this.textContent;
           this.textContent = "✓";
+          this.classList.add("copy-success");
+          
           setTimeout(() => {
             this.textContent = originalText;
+            this.classList.remove("copy-success");
           }, 1000);
         })
-        .catch(err => console.error("Could not copy text: ", err));
+        .catch(err => {
+          console.error("Could not copy text: ", err);
+          showToast("Failed to copy to clipboard", "error");
+        });
     });
   });
   
@@ -358,17 +367,19 @@ function addCopyButtonsToCookieValues() {
       const value = this.textContent.trim();
       navigator.clipboard.writeText(value)
         .then(() => {
-          // Show success indicator
-          const indicator = document.createElement("span");
-          indicator.className = "copy-indicator";
-          indicator.textContent = "Copied!";
-          this.appendChild(indicator);
+          // Show success toast
+          showToast("Cookie value copied to clipboard", "success", 2000);
           
+          // Add visual feedback with flash animation
+          this.classList.add("copy-flash");
           setTimeout(() => {
-            this.removeChild(indicator);
-          }, 1000);
+            this.classList.remove("copy-flash");
+          }, 500);
         })
-        .catch(err => console.error("Could not copy text: ", err));
+        .catch(err => {
+          console.error("Could not copy text: ", err);
+          showToast("Failed to copy to clipboard", "error");
+        });
     });
   });
 }
@@ -760,43 +771,25 @@ function clearExistingCharts() {
 // Setup tabs function
 function setupTabs() {
   try {
-    // First check if we have the new tab structure
-    const categoryTabs = document.querySelectorAll(".tab-category");
-    if (categoryTabs && categoryTabs.length > 0) {
-      console.log("Setting up new tab category structure");
-      
-      // Setup tab actions menu toggle
-      const tabActionsBtn = document.getElementById("tabActionsBtn");
-      const tabActionsMenu = document.getElementById("tabActionsMenu");
-      
-      if (tabActionsBtn && tabActionsMenu) {
-        tabActionsBtn.addEventListener("click", function(e) {
-          e.stopPropagation();
-          tabActionsMenu.classList.toggle("visible");
-        });
-        
-        // Close menu when clicking elsewhere
-        document.addEventListener("click", function() {
-          tabActionsMenu.classList.remove("visible");
-        });
-      }
-      
-      return;
-    }
+    console.log("Setting up tabs");
     
-    console.log("Setting up standard tabs");
-    
-    // Get all tab toggle elements
     const tabs = document.querySelectorAll(".tab");
     const tabContents = document.querySelectorAll(".tab-content");
     
     if (!tabs || tabs.length === 0) {
-      console.error("No tabs found");
+      console.warn("No tabs found for setup");
       return;
     }
     
+    console.log(`Found ${tabs.length} tabs`);
+    
+    // Add improved click handling for tabs
     tabs.forEach(tab => {
       tab.addEventListener("click", function() {
+        // Visual feedback on click
+        this.classList.add('tab-clicked');
+        setTimeout(() => this.classList.remove('tab-clicked'), 200);
+        
         // Get the target content ID
         const tabId = this.getAttribute("data-tab");
         
@@ -805,10 +798,13 @@ function setupTabs() {
           return;
         }
         
-        // Hide all tab contents
+        // Hide all tab contents with a smooth transition
         tabContents.forEach(content => {
-          content.style.display = "none";
-          content.classList.remove("active");
+          content.style.opacity = "0";
+          setTimeout(() => {
+            content.style.display = "none";
+            content.classList.remove("active");
+          }, 150);
         });
         
         // Remove active class from all tabs
@@ -816,11 +812,18 @@ function setupTabs() {
           t.classList.remove("active");
         });
         
-        // Show the selected tab content
+        // Show the selected tab content with a smooth transition
         const selectedContent = document.getElementById(tabId);
         if (selectedContent) {
-          selectedContent.style.display = "block";
-          selectedContent.classList.add("active");
+          setTimeout(() => {
+            selectedContent.style.display = "block";
+            selectedContent.classList.add("active");
+            // Short delay before fading in for smoother transition
+            setTimeout(() => {
+              selectedContent.style.opacity = "1";
+            }, 50);
+          }, 150);
+          
           this.classList.add("active");
         } else {
           console.error(`Tab content with id ${tabId} not found`);
@@ -828,7 +831,7 @@ function setupTabs() {
       });
     });
     
-    // Set the first tab as active by default if none is active
+    // Set first tab as active by default if none is active
     if (!document.querySelector(".tab.active") && tabs[0]) {
       tabs[0].click();
     }
@@ -1011,17 +1014,26 @@ function scanCurrentSiteCookies() {
 
 // Show error message
 function showError(message) {
+  console.error("Error:", message);
+  
   // Hide loading indicator
   const loadingIndicator = document.getElementById("loadingIndicator");
   if (loadingIndicator) {
     loadingIndicator.style.display = "none";
   }
   
-  // Show error message
+  // Show toast notification instead of standard error
+  showToast(message, "error");
+  
+  // Also update status message for accessibility
   const statusMessage = document.getElementById("statusMessage");
   if (statusMessage) {
     statusMessage.textContent = message;
     statusMessage.style.display = "block";
+    // Automatically hide after 4 seconds
+    setTimeout(() => {
+      statusMessage.style.display = "none";
+    }, 4000);
   }
 }
 
@@ -1041,10 +1053,25 @@ document.addEventListener("DOMContentLoaded", function() {
   // Setup tabs for navigation
   setupTabs();
   
+  // Add helpful tooltips
+  addHelpfulTooltips();
+  
+  // Add compact mode toggle
+  addCompactModeToggle();
+  
+  // Enhance button feedback
+  enhanceButtonFeedback();
+  
+  // Enhance settings menu - call this last to ensure proper initialization
+  enhanceSettingsMenu();
+  
+  // Setup modal close buttons
+  setupModalCloseHandlers();
+  
   // Set up event listeners for buttons
   const refreshButton = document.getElementById("refreshButton");
   if (refreshButton) {
-    refreshButton.addEventListener("click", loadCookies);
+    // The enhanced button feedback now handles this
   }
   
   const exportButton = document.getElementById("exportButton");
@@ -1052,14 +1079,46 @@ document.addEventListener("DOMContentLoaded", function() {
     exportButton.addEventListener("click", exportCookies);
   }
   
-  // Set up search functionality
+  // Set up search functionality with enhanced UX
   const searchBox = document.getElementById("searchBox");
   if (searchBox) {
+    // Create clear button
+    const searchContainer = searchBox.parentElement;
+    if (searchContainer && !searchContainer.querySelector('.clear-search')) {
+      const clearButton = document.createElement('span');
+      clearButton.className = 'clear-search';
+      clearButton.innerHTML = '✕';
+      clearButton.addEventListener('click', function() {
+        searchBox.value = '';
+        filterCookies('');
+        searchBox.focus();
+      });
+      searchContainer.appendChild(clearButton);
+    }
+    
+    // Add results count element if it doesn't exist
+    const resultsCountContainer = document.getElementById('searchResultsContainer');
+    if (!resultsCountContainer) {
+      const countElement = document.createElement('div');
+      countElement.id = 'searchResultsContainer';
+      countElement.innerHTML = 'Found <span id="searchResultsCount">0</span> matching cookies';
+      countElement.style.display = 'none';
+      countElement.style.marginTop = '5px';
+      countElement.style.fontSize = '12px';
+      countElement.style.color = 'var(--text-color)';
+      countElement.style.opacity = '0.8';
+      
+      if (searchContainer) {
+        searchContainer.after(countElement);
+      }
+    }
+    
+    // Set up input events
     searchBox.addEventListener("input", function() {
       filterCookies(this.value);
     });
     
-    // Also handle Enter key
+    // Handle Enter key
     searchBox.addEventListener("keyup", function(event) {
       if (event && event.key === "Enter") {
         filterCookies(this.value);
@@ -1086,17 +1145,93 @@ document.addEventListener("DOMContentLoaded", function() {
   loadCookies();
 });
 
+// Setup handlers for closing modals
+function setupModalCloseHandlers() {
+  // Tutorial modal close handlers
+  const tutorialModal = document.getElementById("tutorialModal");
+  const closeTutorial = document.getElementById("closeTutorial");
+  const finishTutorial = document.getElementById("finishTutorial");
+  
+  if (tutorialModal) {
+    // Close tutorial when clicking the X button
+    if (closeTutorial) {
+      closeTutorial.addEventListener("click", function() {
+        tutorialModal.style.display = "none";
+      });
+    }
+    
+    // Close tutorial when clicking the finish button
+    if (finishTutorial) {
+      finishTutorial.addEventListener("click", function() {
+        tutorialModal.style.display = "none";
+        showToast("Tutorial completed", "success");
+      });
+    }
+    
+    // Close when clicking outside the modal content
+    tutorialModal.addEventListener("click", function(e) {
+      if (e.target === tutorialModal) {
+        tutorialModal.style.display = "none";
+      }
+    });
+  }
+  
+  // Settings modal close handlers
+  const settingsModal = document.getElementById("settingsModal");
+  const closeSettings = document.getElementById("closeSettings");
+  const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+  
+  if (settingsModal) {
+    // Close settings when clicking the X button
+    if (closeSettings) {
+      closeSettings.addEventListener("click", function() {
+        settingsModal.style.display = "none";
+      });
+    }
+    
+    // Close settings when clicking the save button
+    if (saveSettingsBtn) {
+      saveSettingsBtn.addEventListener("click", function() {
+        // Here you would save settings
+        settingsModal.style.display = "none";
+        showToast("Settings saved", "success");
+      });
+    }
+    
+    // Close when clicking outside the modal content
+    settingsModal.addEventListener("click", function(e) {
+      if (e.target === settingsModal) {
+        settingsModal.style.display = "none";
+      }
+    });
+  }
+}
+
 // Function to filter cookies by search term
 function filterCookies(searchTerm) {
-  if (!searchTerm) {
+  const searchContainer = document.querySelector('.search-container');
+  
+  if (!searchTerm || searchTerm.trim() === '') {
     // If search term is empty, show all cookies
     document.querySelectorAll(".cookie-item").forEach(item => {
       item.style.display = "block";
     });
+    
+    // Remove has-value class from search container
+    if (searchContainer) {
+      searchContainer.classList.remove('has-value');
+    }
+    
     return;
   }
   
-  searchTerm = searchTerm.toLowerCase();
+  // Add has-value class to search container
+  if (searchContainer) {
+    searchContainer.classList.add('has-value');
+  }
+  
+  searchTerm = searchTerm.toLowerCase().trim();
+  let matchCount = 0;
   
   // Filter cookies based on search term
   document.querySelectorAll(".cookie-item").forEach(item => {
@@ -1108,9 +1243,70 @@ function filterCookies(searchTerm) {
         cookieValue.includes(searchTerm) || 
         cookieDetails.includes(searchTerm)) {
       item.style.display = "block";
+      // Highlight the matching text
+      highlightMatchingText(item, searchTerm);
+      matchCount++;
     } else {
       item.style.display = "none";
+      // Remove any previous highlights
+      removeHighlights(item);
     }
+  });
+  
+  // Update the search results count
+  const resultsCount = document.getElementById('searchResultsCount');
+  if (resultsCount) {
+    resultsCount.textContent = matchCount;
+    resultsCount.parentElement.style.display = matchCount > 0 ? 'block' : 'none';
+  }
+}
+
+// Helper function to highlight matching text
+function highlightMatchingText(cookieItem, searchTerm) {
+  // Remove any previous highlights first
+  removeHighlights(cookieItem);
+  
+  // Text elements to search in
+  const textElements = [
+    cookieItem.querySelector(".cookie-name"),
+    cookieItem.querySelector(".cookie-value"),
+    cookieItem.querySelector(".cookie-details")
+  ];
+  
+  textElements.forEach(element => {
+    if (!element) return;
+    
+    const originalText = element.textContent;
+    const lowerText = originalText.toLowerCase();
+    let lastIndex = 0;
+    let newHtml = '';
+    
+    // Find all instances of the search term
+    while ((lastIndex = lowerText.indexOf(searchTerm, lastIndex)) !== -1) {
+      // Add text before the match
+      newHtml += originalText.substring(newHtml.length === 0 ? 0 : lastIndex + searchTerm.length, lastIndex);
+      
+      // Add the highlighted match
+      newHtml += `<span class="search-highlight">${originalText.substring(lastIndex, lastIndex + searchTerm.length)}</span>`;
+      
+      lastIndex += searchTerm.length;
+    }
+    
+    // Add any remaining text
+    if (newHtml) {
+      newHtml += originalText.substring(lastIndex);
+      element.innerHTML = newHtml;
+    }
+  });
+}
+
+// Helper function to remove highlights
+function removeHighlights(cookieItem) {
+  const highlightElements = cookieItem.querySelectorAll(".search-highlight");
+  highlightElements.forEach(el => {
+    const parent = el.parentNode;
+    parent.replaceChild(document.createTextNode(el.textContent), el);
+    parent.normalize();
   });
 }
 
@@ -1153,13 +1349,38 @@ function exportCookies() {
 
 // Setup category toggles for expandable/collapsible sections
 function setupCategoryToggles() {
-  // This will be called after cookies are rendered,
-  // so we can set up toggles for category headers
+  console.log("Setting up category toggles with improved animations");
+  // Get all category headers
   document.querySelectorAll(".category-header").forEach(header => {
-    header.addEventListener("click", function() {
+    // Initialize aria attributes for accessibility
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('role', 'button');
+    header.setAttribute('aria-expanded', 'false');
+    
+    header.addEventListener("click", function(e) {
+      // Don't toggle if clicking on a button inside the header
+      if (e.target.tagName === "BUTTON") return;
+      
       const cookies = this.nextElementSibling;
       if (cookies && cookies.classList.contains("category-cookies")) {
+        // Toggle the open class for animation
         cookies.classList.toggle("open");
+        
+        // Update aria-expanded for accessibility
+        const isOpen = cookies.classList.contains("open");
+        this.setAttribute('aria-expanded', isOpen.toString());
+        
+        // Add visual feedback
+        this.classList.add('clicked');
+        setTimeout(() => this.classList.remove('clicked'), 300);
+      }
+    });
+    
+    // Add keyboard accessibility
+    header.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.click();
       }
     });
   });
@@ -1359,3 +1580,393 @@ function applyTheme(theme) {
     document.body.classList.remove("dark-theme");
   }
 }
+
+// Add tooltips to help users understand the interface
+function addHelpfulTooltips() {
+  console.log("Adding helpful tooltips");
+  
+  // Define elements that need tooltips
+  const tooltips = [
+    {
+      selector: '#totalCookies',
+      text: 'Total number of cookies found on this site',
+      position: 'top'
+    },
+    {
+      selector: '.necessary',
+      text: 'Essential cookies required for the website to function properly',
+      position: 'top'
+    },
+    {
+      selector: '.preferences',
+      text: 'Cookies that store your preferences and settings',
+      position: 'top'
+    },
+    {
+      selector: '.analytics',
+      text: 'Cookies used to collect data about your browsing behavior',
+      position: 'top'
+    },
+    {
+      selector: '.marketing',
+      text: 'Cookies used for advertising and marketing purposes',
+      position: 'top'
+    },
+    {
+      selector: '.social',
+      text: 'Cookies from social media platforms and sharing tools',
+      position: 'top'
+    },
+    {
+      selector: '.unknown',
+      text: 'Cookies whose purpose could not be determined automatically',
+      position: 'top'
+    },
+    {
+      selector: '#exportButton',
+      text: 'Export cookie data in JSON format',
+      position: 'bottom'
+    },
+    {
+      selector: '#refreshButton',
+      text: 'Rescan the page for updated cookie information',
+      position: 'bottom'
+    }
+  ];
+  
+  // Create and append tooltips
+  tooltips.forEach(tooltip => {
+    const elements = document.querySelectorAll(tooltip.selector);
+    
+    elements.forEach(element => {
+      // Skip if element already has a tooltip container
+      if (element.parentNode.classList.contains('tooltip-container')) {
+        return;
+      }
+      
+      // Create tooltip container
+      const container = document.createElement('div');
+      container.className = 'tooltip-container';
+      
+      // Replace element with the container
+      element.parentNode.insertBefore(container, element);
+      container.appendChild(element);
+      
+      // Create tooltip trigger
+      const trigger = document.createElement('span');
+      trigger.className = 'tooltip-trigger';
+      trigger.textContent = 'ⓘ';
+      container.appendChild(trigger);
+      
+      // Create tooltip content
+      const content = document.createElement('div');
+      content.className = 'tooltip-content';
+      content.textContent = tooltip.text;
+      if (tooltip.position) {
+        content.classList.add(`tooltip-${tooltip.position}`);
+      }
+      container.appendChild(content);
+    });
+  });
+}
+
+// Add compact mode toggle to settings menu
+function addCompactModeToggle() {
+  console.log("Adding compact mode toggle");
+  
+  const settingsMenu = document.getElementById("settingsMenu");
+  if (!settingsMenu) {
+    console.warn("Settings menu not found for compact mode toggle");
+    return;
+  }
+  
+  // Create compact mode toggle item
+  const compactModeItem = document.createElement("div");
+  compactModeItem.className = "settings-menu-item";
+  compactModeItem.id = "compactModeToggle";
+  
+  // Force disable compact mode initially to ensure proper display size
+  localStorage.setItem("compactMode", "false");
+  document.body.classList.remove("compact-mode");
+  compactModeItem.textContent = "Enable Compact Mode";
+  
+  // Add click handler
+  compactModeItem.addEventListener("click", function() {
+    const isNowCompact = document.body.classList.toggle("compact-mode");
+    localStorage.setItem("compactMode", isNowCompact.toString());
+    this.textContent = isNowCompact ? "Disable Compact Mode" : "Enable Compact Mode";
+    
+    // Show toast notification
+    showToast(isNowCompact ? "Compact mode enabled" : "Compact mode disabled", "info", 2000);
+  });
+  
+  // Add to menu, right after the show tutorial option
+  const tutorialBtn = document.getElementById("showTutorialBtn");
+  if (tutorialBtn) {
+    settingsMenu.insertBefore(compactModeItem, tutorialBtn.nextSibling);
+  } else {
+    settingsMenu.appendChild(compactModeItem);
+  }
+}
+
+// Enhance refresh button with better feedback
+function enhanceButtonFeedback() {
+  console.log("Enhancing button feedback");
+  
+  // Enhance the refresh button
+  const refreshButton = document.getElementById("refreshButton");
+  if (refreshButton) {
+    const originalText = refreshButton.textContent;
+    refreshButton.addEventListener("click", function() {
+      // Don't proceed if already loading
+      if (this.disabled) return;
+      
+      // Show loading state
+      this.innerHTML = '<div class="loading-spinner" style="display:inline-block;margin-right:6px;"></div> Scanning...';
+      this.disabled = true;
+      
+      // Call the original function
+      loadCookies();
+      
+      // Reset after a reasonable timeout
+      setTimeout(() => {
+        this.innerHTML = originalText;
+        this.disabled = false;
+      }, 2000);
+    }, { once: false });
+  }
+  
+  // Add ripple effect to all buttons
+  document.querySelectorAll("button").forEach(button => {
+    if (!button.classList.contains("has-ripple")) {
+      button.classList.add("has-ripple");
+      
+      button.addEventListener("click", function(e) {
+        const rect = this.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const ripple = document.createElement("span");
+        ripple.className = "ripple";
+        ripple.style.left = `${x}px`;
+        ripple.style.top = `${y}px`;
+        
+        this.appendChild(ripple);
+        
+        setTimeout(() => {
+          ripple.remove();
+        }, 600);
+      });
+    }
+  });
+}
+
+// Function to enhance the settings menu with animations
+function enhanceSettingsMenu() {
+  console.log("Enhancing settings menu");
+  
+  const settingsBtn = document.getElementById("settingsBtn");
+  const settingsMenu = document.getElementById("settingsMenu");
+  
+  if (!settingsBtn || !settingsMenu) {
+    console.warn("Settings elements not found");
+    return;
+  }
+  
+  // Make sure we're using display none initially
+  settingsMenu.style.display = "none";
+  
+  // Simple direct toggle approach
+  settingsBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    
+    // Toggle menu visibility
+    const isVisible = settingsMenu.style.display === "block";
+    settingsMenu.style.display = isVisible ? "none" : "block";
+    settingsBtn.setAttribute("aria-expanded", (!isVisible).toString());
+    
+    // Only add outside click listener if menu is now visible
+    if (!isVisible) {
+      setTimeout(() => {
+        document.addEventListener("click", function closeMenu(event) {
+          if (!settingsMenu.contains(event.target) && event.target !== settingsBtn) {
+            settingsMenu.style.display = "none";
+            settingsBtn.setAttribute("aria-expanded", "false");
+            document.removeEventListener("click", closeMenu);
+          }
+        });
+      }, 10);
+    }
+  });
+  
+  // Add keyboard support
+  settingsBtn.setAttribute("aria-controls", "settingsMenu");
+  settingsBtn.setAttribute("aria-expanded", "false");
+  settingsBtn.setAttribute("role", "button");
+  settingsBtn.setAttribute("tabindex", "0");
+  
+  settingsBtn.addEventListener("keydown", function(e) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      this.click();
+    } else if (e.key === "Escape" && settingsMenu.style.display === "block") {
+      settingsMenu.style.display = "none";
+      this.setAttribute("aria-expanded", "false");
+    }
+  });
+  
+  // Add specific handlers for menu items
+  const showTutorialBtn = document.getElementById("showTutorialBtn");
+  if (showTutorialBtn) {
+    showTutorialBtn.addEventListener("click", function() {
+      // Hide settings menu
+      settingsMenu.style.display = "none";
+      settingsBtn.setAttribute("aria-expanded", "false");
+      
+      // Show tutorial modal
+      const tutorialModal = document.getElementById("tutorialModal");
+      if (tutorialModal) {
+        tutorialModal.style.display = "block";
+      }
+      
+      // Show success toast
+      showToast("Tutorial opened", "info");
+    });
+  }
+  
+  const openSettingsBtn = document.getElementById("openSettingsBtn");
+  if (openSettingsBtn) {
+    openSettingsBtn.addEventListener("click", function() {
+      // Hide settings menu
+      settingsMenu.style.display = "none";
+      settingsBtn.setAttribute("aria-expanded", "false");
+      
+      // Show settings modal
+      const settingsModal = document.getElementById("settingsModal");
+      if (settingsModal) {
+        settingsModal.style.display = "block";
+      }
+      
+      // Show success toast
+      showToast("Settings opened", "info");
+    });
+  }
+  
+  // Make menu items accessible
+  const menuItems = settingsMenu.querySelectorAll(".settings-menu-item");
+  menuItems.forEach((item, index) => {
+    item.setAttribute("tabindex", "0");
+    item.setAttribute("role", "menuitem");
+    
+    item.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        this.click();
+      } else if (e.key === "Escape") {
+        settingsMenu.style.display = "none";
+        settingsBtn.setAttribute("aria-expanded", "false");
+        settingsBtn.focus();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const nextItem = menuItems[index + 1] || menuItems[0];
+        nextItem.focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const prevItem = menuItems[index - 1] || menuItems[menuItems.length - 1];
+        prevItem.focus();
+      }
+    });
+  });
+}
+
+// Toast notification system
+function showToast(message, type = "info", duration = 4000) {
+  console.log(`Showing toast: ${message} (${type})`);
+  
+  // Create toast container if it doesn't exist
+  let container = document.querySelector(".toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "toast-container";
+    document.body.appendChild(container);
+  }
+  
+  // Create toast element
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  
+  // Create icon
+  let icon = "";
+  switch (type) {
+    case "success": icon = "✓"; break;
+    case "warning": icon = "⚠"; break;
+    case "error": icon = "✕"; break;
+    default: icon = "ℹ"; break;
+  }
+  
+  // Create toast content
+  toast.innerHTML = `
+    <div class="toast-icon">${icon}</div>
+    <div class="toast-message">${message}</div>
+    <div class="toast-close">✕</div>
+  `;
+  
+  // Add to container
+  container.appendChild(toast);
+  
+  // Setup close button
+  const closeBtn = toast.querySelector(".toast-close");
+  closeBtn.addEventListener("click", () => {
+    toast.style.animation = "toast-in-right 0.3s reverse forwards";
+    setTimeout(() => {
+      container.removeChild(toast);
+      // Remove container if empty
+      if (container.children.length === 0) {
+        document.body.removeChild(container);
+      }
+    }, 300);
+  });
+  
+  // Auto remove after duration
+  setTimeout(() => {
+    // Only remove if the toast still exists
+    if (document.body.contains(toast)) {
+      toast.style.animation = "toast-in-right 0.3s reverse forwards";
+      setTimeout(() => {
+        if (container.contains(toast)) {
+          container.removeChild(toast);
+          // Remove container if empty
+          if (container.children.length === 0) {
+            document.body.removeChild(container);
+          }
+        }
+      }, 300);
+    }
+  }, duration);
+  
+  // Make toast accessible
+  toast.setAttribute("role", "alert");
+  toast.setAttribute("aria-live", "assertive");
+  
+  return toast;
+}
+
+// Update the loadCookies function to show a success message
+let originalLoadCookies = loadCookies;
+loadCookies = function() {
+  originalLoadCookies();
+  
+  // Show a toast when scan starts
+  showToast("Scanning cookies...", "info");
+};
+
+// Update handleScanResponse to show a success message
+let originalHandleScanResponse = handleScanResponse;
+handleScanResponse = function(response) {
+  originalHandleScanResponse(response);
+  
+  if (response && response.success) {
+    const count = response.cookies ? response.cookies.length : 0;
+    showToast(`Found ${count} cookies on this site`, "success");
+  }
+};
